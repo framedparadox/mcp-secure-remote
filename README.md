@@ -3,9 +3,18 @@
 A stdio ↔ remote bridge for the [Model Context Protocol](https://modelcontextprotocol.io)
 with first-class **mTLS (mutual TLS) client-certificate authentication**.
 
+Run directly with [`uvx`](https://docs.astral.sh/uv/guides/tools/) — no install step needed:
+
+```bash
+uvx mcp-secure-remote https://mcp.example.com/mcp \
+  --tls-cert ./certs/client.crt \
+  --tls-key  ./certs/client.key \
+  --tls-ca   ./certs/ca-bundle.pem
+```
+
 Works with any MCP-capable AI agent or IDE — Claude Desktop, Claude Code,
-Cursor, Windsurf, Cline, Continue, Zed, VS Code MCP extensions, and any
-custom client that speaks the MCP stdio transport.
+Cursor, Windsurf, Cline, Continue, Zed, and any custom client that speaks
+the MCP stdio transport.
 
 ---
 
@@ -20,14 +29,14 @@ custom client that speaks the MCP stdio transport.
 7. [CLI parameters](#cli-parameters)
 8. [Environment variables](#environment-variables)
 9. [AI agent / IDE integration](#ai-agent--ide-integration)
-   - [Claude Desktop](#claude-desktop)
-   - [Claude Code (CLI)](#claude-code-cli)
-   - [Cursor](#cursor)
-   - [Windsurf](#windsurf)
-   - [Cline (VS Code)](#cline-vs-code)
-   - [Continue (VS Code / JetBrains)](#continue-vs-code--jetbrains)
-   - [Zed](#zed)
-   - [Generic MCP client](#generic-mcp-client)
+    - [Claude Desktop](#claude-desktop)
+    - [Claude Code (CLI)](#claude-code-cli)
+    - [Cursor](#cursor)
+    - [Windsurf](#windsurf)
+    - [Cline (VS Code)](#cline-vs-code)
+    - [Continue (VS Code / JetBrains)](#continue-vs-code--jetbrains)
+    - [Zed](#zed)
+    - [Generic MCP client](#generic-mcp-client)
 10. [Testing your setup](#testing-your-setup)
 11. [Security notes](#security-notes)
 12. [Troubleshooting](#troubleshooting)
@@ -47,26 +56,31 @@ tokens on the wire, no shared API keys.
 ```
 ┌──────────────┐   stdio    ┌────────────────────┐   HTTPS + mTLS   ┌───────────────┐
 │ MCP client   │───────────▶│ mcp-secure-remote  │─────────────────▶│ Remote MCP    │
-│ (Claude,     │            │ (this proxy)       │                  │ server        │
+│ (Claude,     │            │ (uvx, this proxy)  │                  │ server        │
 │  Cursor, …)  │◀───────────│                    │◀─────────────────│               │
 └──────────────┘            └────────────────────┘                  └───────────────┘
 ```
 
+The remote MCP server can be implemented in any language — Python, Go, Rust,
+Node.js, etc. The proxy only sees HTTPS + JSON-RPC.
+
 ## How it works
 
-1. AI agent launches `mcp-secure-remote` as a local subprocess and talks to
-   it over stdio (the transport every MCP client already supports).
-2. Proxy builds an undici HTTPS dispatcher seeded with your client cert,
+1. AI agent launches `mcp-secure-remote` (via `uvx`) as a local subprocess
+   and talks to it over stdio — the transport every MCP client already supports.
+2. Proxy builds an `httpx` HTTPS client seeded with your client cert,
    private key, and trusted CA bundle.
 3. Proxy opens either a Streamable HTTP or SSE transport to the remote
-   server (configurable). TLS handshake presents the client cert; server
+   server (configurable). TLS handshake presents the client cert; the server
    validates it before forwarding the MCP session.
 4. JSON-RPC frames flow bidirectionally. All proxy logging goes to stderr
    so the stdio channel stays clean.
 
 ## Prerequisites
 
-- Node.js **≥ 18** (for built-in `fetch`, `undici`, and native TLS features).
+- Python **≥ 3.10**.
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) installed
+  (`curl -LsSf https://astral.sh/uv/install.sh | sh` on macOS/Linux).
 - A client certificate + private key issued by a CA the remote MCP server
   trusts (or a PKCS#12 bundle containing both).
 - The CA bundle used by the remote server, if it is not in your OS trust
@@ -76,12 +90,18 @@ tokens on the wire, no shared API keys.
 
 ## Install
 
-```bash
-# global
-npm install -g mcp-secure-remote
+`uvx` runs the package directly from PyPI in an isolated environment — no
+explicit install step needed:
 
-# or ephemeral (recommended for agent configs)
-npx mcp-secure-remote <server-url> [options]
+```bash
+uvx mcp-secure-remote --help
+```
+
+To install permanently in a `uv`-managed tool environment:
+
+```bash
+uv tool install mcp-secure-remote
+mcp-secure-remote --help
 ```
 
 ## Generate or obtain client certificates
@@ -111,7 +131,7 @@ Point the proxy at `client.crt` + `client.key` + the server's CA bundle.
 Cert + key pair:
 
 ```bash
-npx mcp-secure-remote https://mcp.example.com/mcp \
+uvx mcp-secure-remote https://mcp.example.com/mcp \
   --tls-cert ./certs/client.crt \
   --tls-key  ./certs/client.key \
   --tls-ca   ./certs/ca-bundle.pem
@@ -120,7 +140,7 @@ npx mcp-secure-remote https://mcp.example.com/mcp \
 PKCS#12 bundle:
 
 ```bash
-npx mcp-secure-remote https://mcp.example.com/mcp \
+uvx mcp-secure-remote https://mcp.example.com/mcp \
   --tls-pfx       ./certs/client.p12 \
   --tls-passphrase "$P12_PASSPHRASE" \
   --tls-ca        ./certs/ca-bundle.pem
@@ -129,7 +149,7 @@ npx mcp-secure-remote https://mcp.example.com/mcp \
 Force SSE transport + pin minimum TLS:
 
 ```bash
-npx mcp-secure-remote https://mcp.example.com/sse \
+uvx mcp-secure-remote https://mcp.example.com/sse \
   --transport sse-only \
   --tls-min-version TLSv1.3 \
   --tls-cert ./certs/client.crt \
@@ -153,6 +173,7 @@ named flag.
 | `--transport <strategy>` | enum | `http-first` | Transport negotiation. One of `http-first`, `sse-first`, `http-only`, `sse-only`. `-first` variants try the preferred transport then fall back; `-only` variants never fall back. |
 | `--allow-http` | boolean | `false` | Permit plain `http://` URLs. Off by default; mTLS is meaningless over HTTP. |
 | `--debug` | boolean | `false` | Verbose logging to stderr (parsed args, per-message trace, transport selection). |
+| `--version` | boolean | — | Print version and exit. |
 | `-h`, `--help` | boolean | — | Print usage and exit. |
 
 ### mTLS / TLS
@@ -165,7 +186,7 @@ named flag.
 | `--tls-pfx <path>` | path | — | PKCS#12 (`.pfx` / `.p12`) bundle. Mutually exclusive with `--tls-cert`/`--tls-key`. |
 | `--tls-passphrase <value>` | string | — | Passphrase protecting the private key or PFX bundle. Prefer the env var to keep secrets off the command line. |
 | `--tls-servername <name>` | string | URL hostname | SNI override. Use when the server cert's SAN differs from the URL host (e.g. IP literal, internal DNS). |
-| `--tls-min-version <ver>` | enum | Node default | Minimum TLS version: `TLSv1.2` or `TLSv1.3`. |
+| `--tls-min-version <ver>` | enum | system default | Minimum TLS version: `TLSv1.2` or `TLSv1.3`. |
 | `--tls-insecure-skip-verify`, `--tls-no-verify` | boolean | `false` | Disable server certificate validation. **Dev only.** Proxy prints a warning when enabled. |
 
 ### Parameter rules
@@ -197,9 +218,8 @@ Precedence: explicit CLI flag overrides env var.
 
 ## AI agent / IDE integration
 
-Every agent below launches the proxy as a local stdio MCP server. Pattern
-is identical — only the config file format differs. **Use absolute paths**;
-agents do not inherit your shell's working directory.
+Use **absolute paths** for all cert files — agents do not inherit your
+shell's working directory.
 
 ### Claude Desktop
 
@@ -210,7 +230,7 @@ File: `~/Library/Application Support/Claude/claude_desktop_config.json`
 {
   "mcpServers": {
     "example": {
-      "command": "npx",
+      "command": "uvx",
       "args": [
         "mcp-secure-remote",
         "https://mcp.example.com/mcp",
@@ -223,15 +243,32 @@ File: `~/Library/Application Support/Claude/claude_desktop_config.json`
 }
 ```
 
+Using env vars to keep secrets out of the config file:
+
+```json
+{
+  "mcpServers": {
+    "example": {
+      "command": "uvx",
+      "args": ["mcp-secure-remote", "https://mcp.example.com/mcp"],
+      "env": {
+        "MCP_REMOTE_TLS_CERT": "/absolute/path/client.crt",
+        "MCP_REMOTE_TLS_KEY":  "/absolute/path/client.key",
+        "MCP_REMOTE_TLS_CA":   "/absolute/path/ca-bundle.pem"
+      }
+    }
+  }
+}
+```
+
 Restart Claude Desktop after editing.
 
 ### Claude Code (CLI)
 
-Add a server via the `claude mcp add` command or edit
-`~/.claude.json` / project `.mcp.json`:
+Add via `claude mcp add` or edit `~/.claude.json` / project `.mcp.json`:
 
 ```bash
-claude mcp add example npx -- mcp-secure-remote \
+claude mcp add example uvx -- mcp-secure-remote \
   https://mcp.example.com/mcp \
   --tls-cert /absolute/path/client.crt \
   --tls-key  /absolute/path/client.key \
@@ -244,7 +281,7 @@ Or in `.mcp.json`:
 {
   "mcpServers": {
     "example": {
-      "command": "npx",
+      "command": "uvx",
       "args": [
         "mcp-secure-remote",
         "https://mcp.example.com/mcp",
@@ -265,7 +302,7 @@ File: `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (per project).
 {
   "mcpServers": {
     "example": {
-      "command": "npx",
+      "command": "uvx",
       "args": [
         "mcp-secure-remote",
         "https://mcp.example.com/mcp",
@@ -289,7 +326,7 @@ File: `~/.codeium/windsurf/mcp_config.json`.
 {
   "mcpServers": {
     "example": {
-      "command": "npx",
+      "command": "uvx",
       "args": [
         "mcp-secure-remote",
         "https://mcp.example.com/mcp",
@@ -304,14 +341,14 @@ File: `~/.codeium/windsurf/mcp_config.json`.
 
 ### Cline (VS Code)
 
-Cline reads `cline_mcp_settings.json` from its extension storage. Open
-the Cline MCP panel → "Configure MCP Servers" or edit the file directly:
+Open the Cline MCP panel → "Configure MCP Servers" or edit
+`cline_mcp_settings.json` from its extension storage directly:
 
 ```json
 {
   "mcpServers": {
     "example": {
-      "command": "npx",
+      "command": "uvx",
       "args": [
         "mcp-secure-remote",
         "https://mcp.example.com/mcp",
@@ -337,7 +374,7 @@ File: `~/.continue/config.json` (or `config.yaml`).
       {
         "transport": {
           "type": "stdio",
-          "command": "npx",
+          "command": "uvx",
           "args": [
             "mcp-secure-remote",
             "https://mcp.example.com/mcp",
@@ -361,7 +398,7 @@ File: `~/.config/zed/settings.json`.
   "context_servers": {
     "example": {
       "command": {
-        "path": "npx",
+        "path": "uvx",
         "args": [
           "mcp-secure-remote",
           "https://mcp.example.com/mcp",
@@ -377,20 +414,20 @@ File: `~/.config/zed/settings.json`.
 
 ### Generic MCP client
 
-Any client that spawns stdio MCP servers works. Required pieces:
+Any client that spawns stdio MCP servers works:
 
-- `command`: `npx` (or absolute path to `node` + `dist/proxy.js`).
-- `args`: `["mcp-secure-remote", "<server-url>", …flags]`.
+- `command`: `uvx`
+- `args`: `["mcp-secure-remote", "<server-url>", …tls-flags]`
 - Optional `env` block for `MCP_REMOTE_TLS_*` variables to keep secrets
   out of the args array.
 
 ## Testing your setup
 
-Bundled `mcp-secure-remote-client` verifies the TLS handshake and enumerates the
-server's capabilities — no real agent needed:
+The bundled `mcp-secure-remote-client` verifies the TLS handshake and
+enumerates the server's capabilities — no real agent needed:
 
 ```bash
-npx mcp-secure-remote-client https://mcp.example.com/mcp \
+uvx mcp-secure-remote-client https://mcp.example.com/mcp \
   --tls-cert ./certs/client.crt \
   --tls-key  ./certs/client.key \
   --tls-ca   ./certs/ca-bundle.pem
@@ -418,18 +455,18 @@ Add `--debug` for per-message tracing.
 
 ## Troubleshooting
 
-**`self signed certificate in certificate chain` / `unable to verify the first certificate`**
+**`CERTIFICATE_VERIFY_FAILED` / `unable to verify the first certificate`**
 Point `--tls-ca` at the PEM bundle that signed the remote server's cert.
 OS trust store alone is not enough for private CAs.
 
 **`Hostname/IP does not match certificate's altnames`**
 Set `--tls-servername` to the SAN the server cert presents.
 
-**`error:0909006C:PEM routines:get_name:no start line`**
-Private key file malformed or encrypted. If encrypted, supply
+**Private key malformed or passphrase error**
+Ensure the key file is PEM-encoded. If encrypted, supply
 `--tls-passphrase` (or `MCP_REMOTE_TLS_PASSPHRASE`).
 
-**`ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE` / `alert bad certificate`**
+**TLS handshake failure / `alert bad certificate`**
 Server rejected your client cert. Check:
 - Cert signed by a CA the server trusts.
 - Key matches cert:
@@ -445,20 +482,24 @@ subprocess stderr by default.
 Try `--transport sse-only` or `--transport http-only` to isolate which
 transport the server actually implements. Add `--debug`.
 
-**`already started` error in `mcp-secure-remote-client`.**
-Upgrade — prior versions double-started the transport. Fixed in current
-release.
-
 ## Development
 
 ```bash
-npm install
-npm run typecheck
-npm run build
-```
+# clone and set up dev environment
+git clone https://github.com/framedparadox/mcp-secure-remote.git
+cd mcp-secure-remote
+uv sync
 
-Build artifacts land in `dist/`. `dist/proxy.js` and `dist/client.js` are
-the two bin entrypoints.
+# run directly from source
+uv run mcp-secure-remote --help
+uv run mcp-secure-remote-client --help
+
+# typecheck
+uv run mypy src/
+
+# build wheel + sdist
+uv build
+```
 
 ## License
 
