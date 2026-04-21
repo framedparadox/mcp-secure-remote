@@ -1,6 +1,6 @@
 {
-  "name": "mcp-remote",
-  "version": "0.1.0",
+  "name": "mcp-secure-remote",
+  "version": "0.0.1",
   "description": "Remote proxy for Model Context Protocol servers with mTLS (mutual TLS) client certificate authentication support.",
   "keywords": [
     "mcp",
@@ -12,10 +12,19 @@
     "stdio"
   ],
   "license": "MIT",
+  "author": "framedparadox",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/framedparadox/mcp-secure-remote.git"
+  },
+  "homepage": "https://github.com/framedparadox/mcp-secure-remote#readme",
+  "bugs": {
+    "url": "https://github.com/framedparadox/mcp-secure-remote/issues"
+  },
   "type": "module",
   "bin": {
-    "mcp-remote": "dist/proxy.js",
-    "mcp-remote-client": "dist/client.js"
+    "mcp-secure-remote": "dist/proxy.js",
+    "mcp-secure-remote-client": "dist/client.js"
   },
   "files": [
     "dist",

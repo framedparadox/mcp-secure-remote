@@ -386,11 +386,11 @@ Any client that spawns stdio MCP servers works. Required pieces:
 
 ## Testing your setup
 
-Bundled `mcp-remote-client` verifies the TLS handshake and enumerates the
+Bundled `mcp-secure-remote-client` verifies the TLS handshake and enumerates the
 server's capabilities — no real agent needed:
 
 ```bash
-npx mcp-remote-client https://mcp.example.com/mcp \
+npx mcp-secure-remote-client https://mcp.example.com/mcp \
   --tls-cert ./certs/client.crt \
   --tls-key  ./certs/client.key \
   --tls-ca   ./certs/ca-bundle.pem
@@ -445,7 +445,7 @@ subprocess stderr by default.
 Try `--transport sse-only` or `--transport http-only` to isolate which
 transport the server actually implements. Add `--debug`.
 
-**`already started` error in `mcp-remote-client`.**
+**`already started` error in `mcp-secure-remote-client`.**
 Upgrade — prior versions double-started the transport. Fixed in current
 release.
 

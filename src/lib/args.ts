@@ -172,7 +172,7 @@ function hasAnyMtlsFlag(m: MtlsOptions): boolean {
 
 export function printUsage(): void {
   const lines = [
-    'Usage: mcp-remote <server-url> [options]',
+    'Usage: mcp-secure-remote <server-url> [options]',
     '',
     'Bridges a local stdio MCP client to a remote MCP server, authenticating',
     'with a mutual-TLS client certificate.',

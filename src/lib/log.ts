@@ -10,7 +10,7 @@ export function isDebug(): boolean {
 
 /** Log to stderr so we never pollute the stdio MCP channel on stdout. */
 export function log(message: string, ...rest: unknown[]): void {
-  const prefix = `[mcp-remote ${new Date().toISOString()}]`
+  const prefix = `[mcp-secure-remote ${new Date().toISOString()}]`
   if (rest.length > 0) {
     process.stderr.write(`${prefix} ${message} ${rest.map(serialize).join(' ')}\n`)
   } else {

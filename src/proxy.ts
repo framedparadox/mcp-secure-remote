@@ -1,5 +1,5 @@
 /**
- * mcp-remote proxy – stdio <-> remote MCP server bridge with mTLS support.
+ * mcp-secure-remote proxy – stdio <-> remote MCP server bridge with mTLS support.
  *
  * Spawns as a local stdio MCP server and forwards traffic to a remote MCP
  * server over HTTPS. Client certificate authentication (mTLS) can be

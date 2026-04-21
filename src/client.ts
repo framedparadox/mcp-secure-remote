@@ -1,5 +1,5 @@
 /**
- * mcp-remote-client – standalone client for exercising a remote MCP server
+ * mcp-secure-remote-client – standalone client for exercising a remote MCP server
  * over mTLS without running a stdio proxy. Useful for verifying certificate
  * configuration and listing the tools/resources/prompts exposed by the server.
  */
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
   })
 
   const client = new Client(
-    { name: 'mcp-remote-client', version: '0.1.0' },
+    { name: 'mcp-secure-remote-client', version: '0.1.0' },
     { capabilities: {} },
   )
 
