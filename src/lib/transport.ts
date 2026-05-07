@@ -21,7 +21,11 @@ function buildOutboundFetch(expectedOrigin: string, dispatcher?: UndiciAgent): t
   return ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const requestUrl = resolveRequestUrl(input)
     if (requestUrl.origin !== expectedOrigin) {
-      throw new Error(`Refusing outbound request to unexpected origin: ${requestUrl.origin}`)
+      debugLog('blocked outbound request to unexpected origin', {
+        expectedOrigin,
+        actualOrigin: requestUrl.origin,
+      })
+      throw new Error('Refusing outbound request to an unexpected origin')
     }
 
     const merged = {
@@ -36,8 +40,12 @@ function buildOutboundFetch(expectedOrigin: string, dispatcher?: UndiciAgent): t
     ).then(async (response) => {
       const responseUrl = new URL(response.url)
       if (responseUrl.origin !== expectedOrigin) {
+        debugLog('blocked redirect to unexpected origin', {
+          expectedOrigin,
+          actualOrigin: responseUrl.origin,
+        })
         await response.body?.cancel().catch(() => {})
-        throw new Error(`Remote server redirected to unexpected origin: ${responseUrl.origin}`)
+        throw new Error('Remote server redirected to an unexpected origin')
       }
       return response as unknown as Response
     })
