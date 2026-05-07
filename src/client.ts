@@ -101,6 +101,11 @@ function sanitizeMtlsForLog(mtls: MtlsOptions): Record<string, unknown> {
   }
 }
 
+/**
+ * Escape control and bidi-override characters before writing remote-supplied
+ * metadata to a terminal so malicious servers cannot inject terminal control
+ * sequences or spoof visible text ordering.
+ */
 function sanitizeTerminalText(value: string): string {
   return value.replace(
     /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,
