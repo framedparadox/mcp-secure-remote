@@ -38,10 +38,10 @@ async def _run() -> None:
         mtls=parsed.mtls,
     ) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
+            initialize_result = await session.initialize()
             log("Connected.")
 
-            capabilities = session.server_capabilities
+            capabilities = getattr(session, "server_capabilities", None) or initialize_result.capabilities
             log("Server capabilities:", str(capabilities))
 
             if capabilities and capabilities.tools:

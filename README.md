@@ -437,6 +437,9 @@ Output: negotiated capabilities + lists of tools, resources, prompts.
 
 Add `--debug` for per-message tracing.
 
+For a fully local endpoint that actually requires client-certificate
+authentication, see [LOCAL_MTLS_TESTING.md](./LOCAL_MTLS_TESTING.md).
+
 ## Security notes
 
 - **HTTPS only by default.** `http://` URLs are refused unless
