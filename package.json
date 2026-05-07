@@ -40,8 +40,8 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4",
-    "undici": "^6.21.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "undici": "^6.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
