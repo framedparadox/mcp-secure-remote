@@ -406,11 +406,19 @@ Add `--debug` for per-message tracing.
   `--allow-http` is explicitly set. Proxy additionally warns when mTLS
   flags are combined with `http://` because the client cert will not be
   sent.
+- **Redirects are rejected.** Outbound transport requests do not follow HTTP
+  redirects, which prevents a remote endpoint from bouncing the client to a
+  different host and reusing the configured TLS credentials there.
 - **Skip-verify prints a warning.** `--tls-insecure-skip-verify` disables
   server certificate validation; intended for local dev loops only.
 - **Prefer env vars for passphrases.** Anything on the CLI may leak into
   process listings, shell history, or agent logs.
+- **Debug logging redacts secrets.** The bundled client and proxy avoid
+  printing TLS passphrases or header values in `--debug` output.
 - **Proxy logs to stderr.** stdout is reserved for the MCP JSON-RPC stream.
+- **Client output is terminal-sanitized.** Tool names, descriptions,
+  resources, and prompts received from the remote server are escaped before
+  being written to the terminal.
 - **No credential persistence.** Proxy does not write certs, keys, or
   tokens to disk.
 - **Pin TLS 1.3** (`--tls-min-version TLSv1.3`) when the server supports

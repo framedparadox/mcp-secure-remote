@@ -6,19 +6,41 @@ import { buildMtlsDispatcher, hasMtlsConfig, type MtlsOptions } from './mtls.js'
 import type { TransportStrategy } from './args.js'
 import { debugLog, log } from './log.js'
 
+function resolveRequestUrl(input: Parameters<typeof fetch>[0]): URL {
+  if (input instanceof URL) return input
+  if (typeof input === 'string') return new URL(input)
+  return new URL(input.url)
+}
+
 /**
- * Build a fetch implementation that routes through undici with our mTLS
- * dispatcher attached. The MCP SDK transports accept a custom fetch, which is
- * how we inject client certificate authentication on every outbound request.
+ * Build a fetch implementation that routes through undici, optionally attaches
+ * our mTLS dispatcher, and refuses redirects or origin pivots so a remote MCP
+ * endpoint cannot bounce the client to an unexpected host.
  */
-function buildMtlsFetch(dispatcher: UndiciAgent): typeof fetch {
+function buildOutboundFetch(expectedOrigin: string, dispatcher?: UndiciAgent): typeof fetch {
   return ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-    const merged = { ...(init ?? {}), dispatcher } as RequestInit & { dispatcher: UndiciAgent }
-    // undici's fetch is API-compatible with the global fetch.
+    const requestUrl = resolveRequestUrl(input)
+    if (requestUrl.origin !== expectedOrigin) {
+      throw new Error(`Refusing outbound request to unexpected origin: ${requestUrl.origin}`)
+    }
+
+    const merged = {
+      ...(init ?? {}),
+      redirect: 'error',
+      ...(dispatcher ? { dispatcher } : {}),
+    } as RequestInit & { dispatcher?: UndiciAgent }
+
     return undiciFetch(
       input as Parameters<typeof undiciFetch>[0],
       merged as Parameters<typeof undiciFetch>[1],
-    ) as unknown as Promise<Response>
+    ).then(async (response) => {
+      const responseUrl = new URL(response.url)
+      if (responseUrl.origin !== expectedOrigin) {
+        await response.body?.cancel().catch(() => {})
+        throw new Error(`Remote server redirected to unexpected origin: ${responseUrl.origin}`)
+      }
+      return response as unknown as Response
+    })
   }) as typeof fetch
 }
 
@@ -48,29 +70,29 @@ export async function connectToRemoteServer({
   mtls,
   autoStart = true,
 }: BuildTransportOptions): Promise<Transport> {
-  let customFetch: typeof fetch | undefined
+  let dispatcher: UndiciAgent | undefined
   if (hasMtlsConfig(mtls)) {
-    const dispatcher = buildMtlsDispatcher(mtls)
-    customFetch = buildMtlsFetch(dispatcher)
+    dispatcher = buildMtlsDispatcher(mtls)
     log('mTLS enabled for outbound requests')
   } else {
     debugLog('no mTLS configuration supplied; using default fetch')
   }
 
   const url = new URL(serverUrl)
+  const outboundFetch = buildOutboundFetch(url.origin, dispatcher)
   const requestInit: RequestInit = { headers }
 
   const buildHttp = () =>
     new StreamableHTTPClientTransport(url, {
       requestInit,
-      ...(customFetch ? { fetch: customFetch } : {}),
+      fetch: outboundFetch,
     })
 
   const buildSse = () =>
     new SSEClientTransport(url, {
       requestInit,
-      ...(customFetch ? { eventSourceInit: { fetch: customFetch } } : {}),
-      ...(customFetch ? { fetch: customFetch } : {}),
+      eventSourceInit: { fetch: outboundFetch },
+      fetch: outboundFetch,
     })
 
   const order: Array<'http' | 'sse'> =
