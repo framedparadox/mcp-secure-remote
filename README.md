@@ -24,11 +24,12 @@ the MCP stdio transport.
 2. [How it works](#how-it-works)
 3. [Prerequisites](#prerequisites)
 4. [Install](#install)
-5. [Generate or obtain client certificates](#generate-or-obtain-client-certificates)
-6. [Quick start](#quick-start)
-7. [CLI parameters](#cli-parameters)
-8. [Environment variables](#environment-variables)
-9. [AI agent / IDE integration](#ai-agent--ide-integration)
+5. [Docker](#docker)
+6. [Generate or obtain client certificates](#generate-or-obtain-client-certificates)
+7. [Quick start](#quick-start)
+8. [CLI parameters](#cli-parameters)
+9. [Environment variables](#environment-variables)
+10. [AI agent / IDE integration](#ai-agent--ide-integration)
     - [Claude Desktop](#claude-desktop)
     - [Claude Code (CLI)](#claude-code-cli)
     - [Cursor](#cursor)
@@ -37,11 +38,11 @@ the MCP stdio transport.
     - [Continue (VS Code / JetBrains)](#continue-vs-code--jetbrains)
     - [Zed](#zed)
     - [Generic MCP client](#generic-mcp-client)
-10. [Testing your setup](#testing-your-setup)
-11. [Security notes](#security-notes)
-12. [Troubleshooting](#troubleshooting)
-13. [Development](#development)
-14. [License](#license)
+11. [Testing your setup](#testing-your-setup)
+12. [Security notes](#security-notes)
+13. [Troubleshooting](#troubleshooting)
+14. [Development](#development)
+15. [License](#license)
 
 ---
 
@@ -103,6 +104,147 @@ To install permanently in a `uv`-managed tool environment:
 uv tool install mcp-secure-remote
 mcp-secure-remote --help
 ```
+
+## Docker
+
+Docker lets you run `mcp-secure-remote` without installing Python or `uv`.
+The container reads stdio from its parent process, so MCP clients that
+spawn subprocesses work exactly the same way — just replace `uvx` with
+`docker run`.
+
+### Dockerfile
+
+```dockerfile
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir mcp-secure-remote
+
+ENTRYPOINT ["mcp-secure-remote"]
+```
+
+Build the image:
+
+```bash
+docker build -t mcp-secure-remote .
+```
+
+### Run directly
+
+Mount your cert directory (read-only) and pass the usual flags:
+
+```bash
+docker run --rm -i \
+  -v /absolute/path/to/certs:/certs:ro \
+  mcp-secure-remote \
+  https://mcp.example.com/mcp \
+  --tls-cert /certs/client.crt \
+  --tls-key  /certs/client.key \
+  --tls-ca   /certs/ca-bundle.pem
+```
+
+`-i` keeps stdin open — required because the proxy reads the MCP stream
+from the container's stdin. `--rm` removes the container after it exits.
+
+Using env vars to keep secrets out of command history:
+
+```bash
+docker run --rm -i \
+  -v /absolute/path/to/certs:/certs:ro \
+  -e MCP_REMOTE_TLS_CERT=/certs/client.crt \
+  -e MCP_REMOTE_TLS_KEY=/certs/client.key \
+  -e MCP_REMOTE_TLS_CA=/certs/ca-bundle.pem \
+  mcp-secure-remote \
+  https://mcp.example.com/mcp
+```
+
+### MCP client config
+
+Replace `uvx` with `docker run` in any client config. Example for Claude
+Desktop / Claude Code / Cursor:
+
+```json
+{
+  "mcpServers": {
+    "example": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "-v", "/absolute/path/to/certs:/certs:ro",
+        "mcp-secure-remote",
+        "https://mcp.example.com/mcp",
+        "--tls-cert", "/certs/client.crt",
+        "--tls-key",  "/certs/client.key",
+        "--tls-ca",   "/certs/ca-bundle.pem"
+      ]
+    }
+  }
+}
+```
+
+To keep secrets out of the config, pass them via `-e` instead:
+
+```json
+{
+  "mcpServers": {
+    "example": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "-v", "/absolute/path/to/certs:/certs:ro",
+        "-e", "MCP_REMOTE_TLS_CERT=/certs/client.crt",
+        "-e", "MCP_REMOTE_TLS_KEY=/certs/client.key",
+        "-e", "MCP_REMOTE_TLS_CA=/certs/ca-bundle.pem",
+        "mcp-secure-remote",
+        "https://mcp.example.com/mcp"
+      ]
+    }
+  }
+}
+```
+
+### Docker Compose
+
+Useful when you want cert mounts and env vars declared once in version
+control rather than repeated in every client config.
+
+`compose.yml`:
+
+```yaml
+services:
+  mcp-proxy:
+    build: .
+    stdin_open: true
+    volumes:
+      - /absolute/path/to/certs:/certs:ro
+    environment:
+      MCP_REMOTE_TLS_CERT: /certs/client.crt
+      MCP_REMOTE_TLS_KEY:  /certs/client.key
+      MCP_REMOTE_TLS_CA:   /certs/ca-bundle.pem
+    command:
+      - https://mcp.example.com/mcp
+```
+
+Run once to verify the connection:
+
+```bash
+docker compose run --rm mcp-proxy
+```
+
+Then point MCP clients at `docker compose run --rm mcp-proxy` as the
+command (with no extra args — env and volume come from `compose.yml`):
+
+```json
+{
+  "mcpServers": {
+    "example": {
+      "command": "docker",
+      "args": ["compose", "run", "--rm", "mcp-proxy"]
+    }
+  }
+}
+```
+
+---
 
 ## Generate or obtain client certificates
 

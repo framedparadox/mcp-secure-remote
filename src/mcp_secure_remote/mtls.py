@@ -50,6 +50,9 @@ def build_ssl_context(opts: MtlsOptions) -> ssl.SSLContext:
                 "passphrase alone has nothing to decrypt."
             )
 
+    # Unconditional floor — applies to both PFX and non-PFX contexts.
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+
     if opts.ca_path:
         try:
             ctx.load_verify_locations(cafile=opts.ca_path)
@@ -89,21 +92,23 @@ def _build_from_pfx(opts: MtlsOptions) -> ssl.SSLContext:
     # Chain intermediates if present
     chain_pem = b"".join(c.public_bytes(Encoding.PEM) for c in (additional_certs or []))
 
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    # load_cert_chain accepts in-memory PEM via the `cadata` path only for CAs,
-    # not for client certs — use a temporary in-memory approach via ssl module.
-    # Write to a secure in-memory bytes buffer via NamedTemporaryFile with
-    # delete-on-close (Python 3.12+) or delete=True with context manager.
+    # create_default_context loads system CAs and sets check_hostname=True /
+    # verify_mode=CERT_REQUIRED, matching the behaviour of the non-PFX path.
+    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
     import tempfile, os
 
     # mkstemp gives a raw fd — write and close before ssl reads it, then unlink.
     cert_fd, cert_tmp = tempfile.mkstemp(suffix=".pem")
     key_fd, key_tmp = tempfile.mkstemp(suffix=".pem")
     try:
-        os.write(cert_fd, cert_pem + chain_pem)
-        os.close(cert_fd)
-        os.write(key_fd, key_pem)
-        os.close(key_fd)
+        try:
+            os.write(cert_fd, cert_pem + chain_pem)
+        finally:
+            os.close(cert_fd)
+        try:
+            os.write(key_fd, key_pem)
+        finally:
+            os.close(key_fd)
         ctx.load_cert_chain(cert_tmp, key_tmp)
     finally:
         # Zero-fill before unlinking to limit key exposure window.

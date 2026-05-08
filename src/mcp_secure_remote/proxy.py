@@ -15,21 +15,8 @@ from mcp.server.stdio import stdio_server  # type: ignore[import]
 
 from .args import parse_args, print_usage
 from .log import debug_log, log, set_debug
-from .mtls import MtlsOptions
+from .sanitize import sanitize_parsed_args_for_log, sanitize_server_url_for_log, summarize_message
 from .transport import connect_to_remote_server
-
-
-def _sanitize_mtls(mtls: MtlsOptions) -> dict:
-    return {
-        "cert_path": mtls.cert_path,
-        "key_path": mtls.key_path,
-        "ca_path": mtls.ca_path,
-        "pfx_path": mtls.pfx_path,
-        "servername": mtls.servername,
-        "min_version": mtls.min_version,
-        "reject_unauthorized": mtls.reject_unauthorized,
-        "passphrase": "***" if mtls.passphrase else None,
-    }
 
 
 async def _run() -> None:
@@ -42,13 +29,7 @@ async def _run() -> None:
         sys.exit(2)
 
     set_debug(parsed.debug)
-    debug_log("parsed arguments", {
-        "server_url": parsed.server_url,
-        "transport_strategy": parsed.transport_strategy,
-        "allow_http": parsed.allow_http,
-        "headers": list(parsed.headers.keys()),
-        "mtls": _sanitize_mtls(parsed.mtls),
-    })
+    debug_log("parsed arguments", sanitize_parsed_args_for_log(parsed))
 
     async with connect_to_remote_server(
         server_url=parsed.server_url,
@@ -57,16 +38,16 @@ async def _run() -> None:
         mtls=parsed.mtls,
     ) as (remote_read, remote_write):
         async with stdio_server() as (local_read, local_write):
-            log(f"Proxy established: stdio <-> {parsed.server_url}")
+            log(f"Proxy established: stdio <-> {sanitize_server_url_for_log(parsed.server_url)}")
 
             async def forward_local_to_remote() -> None:
                 async for message in local_read:
-                    debug_log("client -> server", str(message))
+                    debug_log("client -> server", summarize_message(message))
                     await remote_write.send(message)
 
             async def forward_remote_to_local() -> None:
                 async for message in remote_read:
-                    debug_log("server -> client", str(message))
+                    debug_log("server -> client", summarize_message(message))
                     await local_write.send(message)
 
             async with anyio.create_task_group() as tg:

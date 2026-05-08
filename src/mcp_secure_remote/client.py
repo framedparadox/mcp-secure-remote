@@ -12,6 +12,7 @@ from mcp import ClientSession  # type: ignore[import]
 
 from .args import parse_args, print_usage
 from .log import debug_log, log, set_debug
+from .sanitize import sanitize_parsed_args_for_log, sanitize_terminal_text
 from .transport import connect_to_remote_server
 
 
@@ -25,11 +26,7 @@ async def _run() -> None:
         sys.exit(2)
 
     set_debug(parsed.debug)
-    debug_log("parsed arguments", {
-        "server_url": parsed.server_url,
-        "transport_strategy": parsed.transport_strategy,
-        "headers": list(parsed.headers.keys()),
-    })
+    debug_log("parsed arguments", sanitize_parsed_args_for_log(parsed))
 
     async with connect_to_remote_server(
         server_url=parsed.server_url,
@@ -48,21 +45,23 @@ async def _run() -> None:
                 result = await session.list_tools()
                 log(f"Tools ({len(result.tools)}):")
                 for tool in result.tools:
-                    desc = f" – {tool.description}" if tool.description else ""
-                    sys.stdout.write(f"  - {tool.name}{desc}\n")
+                    name = sanitize_terminal_text(tool.name)
+                    desc = f" – {sanitize_terminal_text(tool.description)}" if tool.description else ""
+                    sys.stdout.write(f"  - {name}{desc}\n")
 
             if capabilities and capabilities.resources:
                 result = await session.list_resources()
                 log(f"Resources ({len(result.resources)}):")
                 for res in result.resources:
-                    name = f" ({res.name})" if res.name else ""
-                    sys.stdout.write(f"  - {res.uri}{name}\n")
+                    uri = sanitize_terminal_text(res.uri)
+                    name = f" ({sanitize_terminal_text(res.name)})" if res.name else ""
+                    sys.stdout.write(f"  - {uri}{name}\n")
 
             if capabilities and capabilities.prompts:
                 result = await session.list_prompts()
                 log(f"Prompts ({len(result.prompts)}):")
                 for prompt in result.prompts:
-                    sys.stdout.write(f"  - {prompt.name}\n")
+                    sys.stdout.write(f"  - {sanitize_terminal_text(prompt.name)}\n")
 
             sys.stdout.flush()
 

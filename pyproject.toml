@@ -35,5 +35,15 @@ Issues = "https://github.com/framedparadox/mcp-secure-remote/issues"
 mcp-secure-remote = "mcp_secure_remote.proxy:main"
 mcp-secure-remote-client = "mcp_secure_remote.client:main"
 
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

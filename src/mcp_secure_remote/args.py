@@ -1,5 +1,6 @@
 """CLI argument parser — mirrors Node.js args.ts logic."""
 import os
+import re
 import sys
 from dataclasses import dataclass
 from typing import Literal
@@ -9,6 +10,25 @@ from .mtls import MtlsOptions
 
 TransportStrategy = Literal["http-first", "sse-first", "http-only", "sse-only"]
 VALID_TRANSPORTS: tuple[str, ...] = ("http-first", "sse-first", "http-only", "sse-only")
+
+# RFC 7230 §3.2.6 — a header field-name must be a sequence of "token" chars.
+# Rejecting anything outside this alphabet prevents CRLF-injection attacks
+# even if the underlying HTTP library would catch it later.
+_VALID_HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
+
+
+def _validate_http_header(name: str, value: str) -> None:
+    """Raise ValueError for header names/values that could enable injection."""
+    if not _VALID_HEADER_NAME_RE.match(name):
+        raise ValueError(
+            f'Invalid header name {name!r}: must be a valid RFC 7230 HTTP token '
+            r"(alphanumerics and !#$%&'*+-.^_`|~)"
+        )
+    # Bare CR, LF, or NUL in a header value enable CRLF-injection attacks.
+    if re.search(r"[\r\n\x00]", value):
+        raise ValueError(
+            f"Header value for {name!r} must not contain CR, LF, or NUL characters"
+        )
 
 
 @dataclass
@@ -74,6 +94,7 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
             value = raw[idx + 1:].strip()
             if not name:
                 raise ValueError(f'--header has empty name: "{raw}"')
+            _validate_http_header(name, value)
             headers[name] = value
 
         elif arg == "--transport":
@@ -131,6 +152,11 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
         raise ValueError(f"Invalid server URL: {server_url}")
     if parsed_url.scheme not in ("http", "https"):
         raise ValueError(f"Server URL must use http(s), got: {parsed_url.scheme}:")
+    if parsed_url.username or parsed_url.password:
+        raise ValueError(
+            "Server URL must not contain embedded credentials; "
+            "use --header or environment configuration instead."
+        )
 
     if server_url.startswith("http://") and not allow_http:
         raise ValueError("Refusing to use http:// without --allow-http; mTLS requires https://.")
@@ -181,6 +207,7 @@ def print_usage() -> None:
         "  --tls-key <path>            PEM private key matching --tls-cert.",
         "  --tls-ca <path>             PEM CA bundle used to verify the remote server.",
         "  --tls-passphrase <value>    Passphrase protecting the private key.",
+        "                              WARNING: visible in process listings (ps/top). Prefer MCP_REMOTE_TLS_PASSPHRASE.",
         "  --tls-pfx <path>            PKCS#12 bundle (alternative to --tls-cert/--tls-key).",
         "                              Requires: pip install 'mcp-secure-remote[pkcs12]'",
         "  --tls-servername <name>     SNI servername override.",
