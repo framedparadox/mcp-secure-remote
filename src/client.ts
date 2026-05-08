@@ -7,7 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { parseCommandLineArgs, printUsage } from './lib/args.js'
 import { debugLog, log, setDebug } from './lib/log.js'
 import { connectToRemoteServer } from './lib/transport.js'
-import type { MtlsOptions } from './lib/mtls.js'
+import { sanitizeParsedArgsForLog, sanitizeTerminalText } from './lib/sanitize.js'
 
 async function main(): Promise<void> {
   let parsed
@@ -70,47 +70,6 @@ async function main(): Promise<void> {
   } finally {
     await client.close().catch(() => {})
   }
-}
-
-function sanitizeParsedArgsForLog(parsed: {
-  serverUrl: string
-  transportStrategy: string
-  allowHttp: boolean
-  headers: Record<string, string>
-  mtls: MtlsOptions
-}): Record<string, unknown> {
-  return {
-    serverUrl: parsed.serverUrl,
-    transportStrategy: parsed.transportStrategy,
-    allowHttp: parsed.allowHttp,
-    headers: Object.keys(parsed.headers),
-    mtls: sanitizeMtlsForLog(parsed.mtls),
-  }
-}
-
-function sanitizeMtlsForLog(mtls: MtlsOptions): Record<string, unknown> {
-  return {
-    certPath: mtls.certPath,
-    keyPath: mtls.keyPath,
-    caPath: mtls.caPath,
-    pfxPath: mtls.pfxPath,
-    servername: mtls.servername,
-    minVersion: mtls.minVersion,
-    rejectUnauthorized: mtls.rejectUnauthorized,
-    passphrase: mtls.passphrase ? '***' : undefined,
-  }
-}
-
-/**
- * Escape control and bidi-override characters before writing remote-supplied
- * metadata to a terminal so malicious servers cannot inject terminal control
- * sequences or spoof visible text ordering.
- */
-function sanitizeTerminalText(value: string): string {
-  return value.replace(
-    /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,
-    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
-  )
 }
 
 main().catch((err) => {

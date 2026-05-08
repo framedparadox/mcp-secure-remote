@@ -38,6 +38,10 @@ function buildOutboundFetch(expectedOrigin: string, dispatcher?: UndiciAgent): t
       input as Parameters<typeof undiciFetch>[0],
       merged as Parameters<typeof undiciFetch>[1],
     ).then(async (response) => {
+      if (!response.url) {
+        await response.body?.cancel().catch(() => {})
+        throw new Error('Response URL is missing; cannot verify origin')
+      }
       const responseUrl = new URL(response.url)
       if (responseUrl.origin !== expectedOrigin) {
         debugLog('blocked redirect to unexpected origin', {

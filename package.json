@@ -37,6 +37,7 @@
     "typecheck": "tsc --noEmit",
     "start:proxy": "node dist/proxy.js",
     "start:client": "node dist/client.js",
+    "prepack": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

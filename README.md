@@ -176,6 +176,8 @@ named flag.
   with `http://` triggers a warning (cert is not sent over plain HTTP).
 - Unknown `--flags` cause parse failure with exit code 2.
 - Argument errors exit with code 2; runtime errors exit with code 1.
+- URLs with embedded credentials, such as `https://user:pass@example.com/mcp`,
+  are rejected. Use `--header` or environment configuration for credentials.
 
 ## Environment variables
 
@@ -414,7 +416,10 @@ Add `--debug` for per-message tracing.
 - **Prefer env vars for passphrases.** Anything on the CLI may leak into
   process listings, shell history, or agent logs.
 - **Debug logging redacts secrets.** The bundled client and proxy avoid
-  printing TLS passphrases or header values in `--debug` output.
+  printing TLS passphrases or header values in `--debug` output. Proxy message
+  tracing logs only JSON-RPC metadata, not full tool arguments or results.
+- **Embedded URL credentials are refused.** Userinfo in the remote URL is not
+  accepted because it can leak through process lists and logs.
 - **Proxy logs to stderr.** stdout is reserved for the MCP JSON-RPC stream.
 - **Client output is terminal-sanitized.** Tool names, descriptions,
   resources, and prompts received from the remote server are escaped before
@@ -463,10 +468,12 @@ release.
 npm install
 npm run typecheck
 npm run build
+npm pack --dry-run
 ```
 
 Build artifacts land in `dist/`. `dist/proxy.js` and `dist/client.js` are
-the two bin entrypoints.
+the two bin entrypoints. `npm pack` and `npm publish` rebuild `dist/` first via
+the package lifecycle scripts.
 
 ## License
 
