@@ -540,6 +540,8 @@ docker run -i mcp-secure-remote \
 ```bash
 npm install
 npm run typecheck
+npm run test
+npm run test:coverage
 npm run build
 npm pack --dry-run
 ```
@@ -547,6 +549,13 @@ npm pack --dry-run
 Build artifacts land in `dist/`. `dist/proxy.js` and `dist/client.js` are
 the two bin entrypoints. `npm pack` and `npm publish` rebuild `dist/` first via
 the package lifecycle scripts.
+
+Test script summary:
+
+- `npm run test` — run all tests once.
+- `npm run test:watch` — run tests in watch mode.
+- `npm run test:coverage` — run tests and generate coverage output.
+- `npm run test:unit` — run tests under `test/unit`.
 
 ## License
 
