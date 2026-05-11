@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-secure-remote"
-version = "0.0.1"
+version = "0.0.2"
 description = "Remote proxy for Model Context Protocol servers with mTLS (mutual TLS) client certificate authentication support."
 readme = "README.md"
 license = { text = "MIT" }
@@ -24,6 +24,7 @@ dependencies = [
   "httpx>=0.25.0",
   "anyio>=4.0.0",
   "cryptography>=41.0.0",
+  "exceptiongroup>=1.0.0; python_version < '3.11'",
 ]
 
 [project.urls]
