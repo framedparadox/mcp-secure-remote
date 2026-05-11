@@ -24,6 +24,7 @@ dependencies = [
   "httpx>=0.25.0",
   "anyio>=4.0.0",
   "cryptography>=41.0.0",
+  "exceptiongroup>=1.0.0; python_version < '3.11'",
 ]
 
 [project.urls]
