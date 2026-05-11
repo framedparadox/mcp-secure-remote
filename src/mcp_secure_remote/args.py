@@ -144,7 +144,6 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
             server_url = arg
 
     if server_url is None:
-        print_usage()
         raise ValueError("Missing required positional argument: <server-url>")
 
     parsed_url = urlparse(server_url)
@@ -209,7 +208,6 @@ def print_usage() -> None:
         "  --tls-passphrase <value>    Passphrase protecting the private key.",
         "                              WARNING: visible in process listings (ps/top). Prefer MCP_REMOTE_TLS_PASSPHRASE.",
         "  --tls-pfx <path>            PKCS#12 bundle (alternative to --tls-cert/--tls-key).",
-        "                              Requires: pip install 'mcp-secure-remote[pkcs12]'",
         "  --tls-servername <name>     SNI servername override.",
         "  --tls-min-version <ver>     TLSv1.2 or TLSv1.3.",
         "  --tls-insecure-skip-verify  Disable server certificate validation (NOT for production).",

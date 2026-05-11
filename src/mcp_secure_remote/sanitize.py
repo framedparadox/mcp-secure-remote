@@ -83,6 +83,7 @@ def summarize_message(message: object) -> dict:
     metadata — message kind, id, method name, and presence of payload fields —
     is included.
     """
+    message = _to_jsonrpc_dict(message)
     if isinstance(message, list):
         return {
             "kind": "batch",
@@ -93,8 +94,28 @@ def summarize_message(message: object) -> dict:
     return _summarize_single(message)
 
 
+def _to_jsonrpc_dict(message: object) -> object:
+    """Unwrap MCP transport wrappers down to a plain dict/list/primitive.
+
+    The mcp SDK ships messages as ``SessionMessage`` wrappers carrying a
+    pydantic ``JSONRPCMessage``. Plain dicts and exceptions pass through.
+    """
+    inner = getattr(message, "message", None)
+    if inner is not None and inner is not message:
+        message = inner
+    model_dump = getattr(message, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return model_dump(by_alias=True, exclude_none=True)
+        except TypeError:
+            return model_dump()
+    return message
+
+
 def _summarize_single(message: object) -> dict:
     if not isinstance(message, dict):
+        if isinstance(message, Exception):
+            return {"kind": "exception", "exc_type": type(message).__name__}
         return {"kind": type(message).__name__}
 
     msg_id = message.get("id")

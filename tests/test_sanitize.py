@@ -229,6 +229,28 @@ class TestSummarizeMessage:
         result = summarize_message(msg)
         assert result["id"] is None
 
+    def test_unwraps_session_message_wrapper(self):
+        from mcp.shared.message import SessionMessage
+        import mcp.types as t
+        inner = t.JSONRPCMessage.model_validate({"jsonrpc": "2.0", "id": 7, "method": "tools/list", "params": {}})
+        wrapped = SessionMessage(message=inner)
+        result = summarize_message(wrapped)
+        assert result["kind"] == "request"
+        assert result["id"] == 7
+        assert result["method"] == "tools/list"
+
+    def test_unwraps_pydantic_jsonrpc_message(self):
+        import mcp.types as t
+        m = t.JSONRPCMessage.model_validate({"jsonrpc": "2.0", "id": 3, "method": "ping"})
+        result = summarize_message(m)
+        assert result["kind"] == "request"
+        assert result["method"] == "ping"
+
+    def test_exception_payload_is_marked(self):
+        result = summarize_message(ValueError("bad json"))
+        assert result["kind"] == "exception"
+        assert result["exc_type"] == "ValueError"
+
 
 class TestMessageKind:
     def test_request_has_method_and_id(self):

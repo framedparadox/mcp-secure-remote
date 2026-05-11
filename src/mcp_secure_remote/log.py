@@ -6,6 +6,23 @@ from datetime import datetime, timezone
 _debug_enabled = False
 
 
+def flatten_exception(exc: BaseException) -> BaseException:
+    """Return the deepest non-group leaf exception inside *exc*.
+
+    ``anyio`` wraps task-group failures in ``BaseExceptionGroup``; the wrapper
+    message ("unhandled errors in a TaskGroup (1 sub-exception)") hides the
+    underlying error. Unwrap it so callers can act on the real exception.
+    """
+    seen: set[int] = set()
+    cur: BaseException = exc
+    while isinstance(cur, BaseExceptionGroup) and cur.exceptions:
+        if id(cur) in seen:
+            break
+        seen.add(id(cur))
+        cur = cur.exceptions[0]
+    return cur
+
+
 def set_debug(enabled: bool) -> None:
     global _debug_enabled
     _debug_enabled = enabled

@@ -73,6 +73,18 @@ class TestBuildSslContextErrors:
         with pytest.raises(ValueError, match="Unknown TLS version"):
             build_ssl_context(opts)
 
+    def test_pfx_file_not_found_raises_valueerror(self):
+        opts = MtlsOptions(pfx_path="/definitely/not/here.pfx")
+        with pytest.raises(ValueError, match="Unable to load PKCS#12 bundle"):
+            build_ssl_context(opts)
+
+    def test_pfx_garbage_data_raises_valueerror(self, tmp_path):
+        bad = tmp_path / "bad.pfx"
+        bad.write_bytes(b"not a real pfx bundle")
+        opts = MtlsOptions(pfx_path=str(bad))
+        with pytest.raises(ValueError, match="Unable to decode PKCS#12 bundle"):
+            build_ssl_context(opts)
+
 
 class TestBuildSslContextWithMockedContext:
     """Verify SSL context configuration via mocked ssl.create_default_context."""

@@ -98,6 +98,13 @@ class TestParseArgsUrl:
         with pytest.raises((ValueError, SystemExit)):
             parse_args([])
 
+    def test_missing_url_does_not_print_usage(self, capsys):
+        # Usage should only be printed by the caller — not by parse_args itself,
+        # otherwise the user sees it twice (usage → error → usage).
+        with pytest.raises(ValueError):
+            parse_args([])
+        assert capsys.readouterr().err == ""
+
     def test_invalid_url_no_scheme_raises(self):
         with pytest.raises(ValueError, match="Invalid server URL"):
             parse_args(["notaurl"])

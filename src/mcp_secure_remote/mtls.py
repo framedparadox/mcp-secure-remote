@@ -79,9 +79,15 @@ def _build_from_pfx(opts: MtlsOptions) -> ssl.SSLContext:
     from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption  # type: ignore[import]
 
     password = opts.passphrase.encode() if opts.passphrase else None
-    pfx_data = Path(opts.pfx_path).read_bytes()  # type: ignore[arg-type]
+    try:
+        pfx_data = Path(opts.pfx_path).read_bytes()  # type: ignore[arg-type]
+    except (FileNotFoundError, OSError) as e:
+        raise ValueError(f"Unable to load PKCS#12 bundle at '{opts.pfx_path}': {e}") from e
 
-    private_key, certificate, additional_certs = pkcs12.load_key_and_certificates(pfx_data, password)
+    try:
+        private_key, certificate, additional_certs = pkcs12.load_key_and_certificates(pfx_data, password)
+    except ValueError as e:
+        raise ValueError(f"Unable to decode PKCS#12 bundle at '{opts.pfx_path}': {e}") from e
 
     if certificate is None or private_key is None:
         raise ValueError(f"PKCS#12 bundle at '{opts.pfx_path}' contains no certificate or private key.")

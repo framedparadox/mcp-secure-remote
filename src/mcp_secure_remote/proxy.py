@@ -14,7 +14,7 @@ import sys
 from mcp.server.stdio import stdio_server  # type: ignore[import]
 
 from .args import parse_args, print_usage
-from .log import debug_log, log, set_debug
+from .log import debug_log, flatten_exception, log, set_debug
 from .sanitize import sanitize_parsed_args_for_log, sanitize_server_url_for_log, summarize_message
 from .transport import connect_to_remote_server
 
@@ -42,11 +42,22 @@ async def _run() -> None:
 
             async def forward_local_to_remote() -> None:
                 async for message in local_read:
+                    if isinstance(message, Exception):
+                        # MCP's stdio_server emits the raw ValidationError when the
+                        # client sends malformed JSON. Forwarding it would crash the
+                        # remote transport; drop it and just record the parse error.
+                        debug_log("client -> server (dropped parse error)", str(message))
+                        continue
                     debug_log("client -> server", summarize_message(message))
                     await remote_write.send(message)
 
             async def forward_remote_to_local() -> None:
                 async for message in remote_read:
+                    if isinstance(message, Exception):
+                        # Same hazard on the remote side — drop it before it
+                        # tears down stdout_writer with an AttributeError.
+                        debug_log("server -> client (dropped parse error)", str(message))
+                        continue
                     debug_log("server -> client", summarize_message(message))
                     await local_write.send(message)
 
@@ -61,9 +72,16 @@ def main() -> None:
     except KeyboardInterrupt:
         log("Received interrupt; shutting down.")
         sys.exit(0)
-    except Exception as exc:
-        log("Fatal error:", str(exc))
-        msg = str(exc).lower()
+    except SystemExit:
+        # _run() raised sys.exit(<code>) on its own — let it through verbatim
+        # so the user sees their original argument-error exit code (2).
+        raise
+    except BaseException as exc:
+        leaf = flatten_exception(exc)
+        if isinstance(leaf, SystemExit):
+            raise leaf
+        log("Fatal error:", f"{type(leaf).__name__}: {leaf}")
+        msg = str(leaf).lower()
         if "self signed" in msg or "unable to verify" in msg or "certificate verify failed" in msg:
             log(
                 "TLS verification failed. If testing against a private CA, pass --tls-ca <path> "

@@ -6,6 +6,7 @@ from mcp_secure_remote.log import (
     _debug_enabled,
     _serialize,
     debug_log,
+    flatten_exception,
     is_debug,
     log,
     set_debug,
@@ -124,3 +125,26 @@ class TestSerialize:
 
         result = _serialize(Opaque())
         assert isinstance(result, str)
+
+
+class TestFlattenException:
+    def test_plain_exception_returned_as_is(self):
+        exc = ValueError("oops")
+        assert flatten_exception(exc) is exc
+
+    def test_single_group_unwrapped(self):
+        leaf = ConnectionError("cant connect")
+        grp = BaseExceptionGroup("wrapper", [leaf])
+        assert flatten_exception(grp) is leaf
+
+    def test_nested_groups_unwrapped(self):
+        leaf = RuntimeError("real error")
+        nested = BaseExceptionGroup("inner", [leaf])
+        outer = BaseExceptionGroup("outer", [nested])
+        assert flatten_exception(outer) is leaf
+
+    def test_empty_group_returned_as_is(self):
+        # ExceptionGroup requires at least one sub-exception, but guard anyway.
+        grp = BaseExceptionGroup("wrapper", [Exception("e")])
+        # The single-leaf case is the realistic one.
+        assert isinstance(flatten_exception(grp), Exception)

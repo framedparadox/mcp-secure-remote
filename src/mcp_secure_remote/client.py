@@ -11,7 +11,7 @@ import anyio
 from mcp import ClientSession  # type: ignore[import]
 
 from .args import parse_args, print_usage
-from .log import debug_log, log, set_debug
+from .log import debug_log, flatten_exception, log, set_debug
 from .sanitize import sanitize_parsed_args_for_log, sanitize_terminal_text
 from .transport import connect_to_remote_server
 
@@ -69,8 +69,22 @@ async def _run() -> None:
 def main() -> None:
     try:
         anyio.run(_run)
-    except Exception as exc:
-        log("Fatal error:", str(exc))
+    except KeyboardInterrupt:
+        log("Received interrupt; shutting down.")
+        sys.exit(0)
+    except SystemExit:
+        raise
+    except BaseException as exc:
+        leaf = flatten_exception(exc)
+        if isinstance(leaf, SystemExit):
+            raise leaf
+        log("Fatal error:", f"{type(leaf).__name__}: {leaf}")
+        msg = str(leaf).lower()
+        if "self signed" in msg or "unable to verify" in msg or "certificate verify failed" in msg:
+            log(
+                "TLS verification failed. If testing against a private CA, pass --tls-ca <path> "
+                "to point at its bundle, or (for local dev only) --tls-insecure-skip-verify."
+            )
         sys.exit(1)
 
 
