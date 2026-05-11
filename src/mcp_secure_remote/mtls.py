@@ -1,4 +1,4 @@
-"""mTLS SSL context builder — mirrors Node.js mtls.ts logic."""
+"""mTLS SSL context builder."""
 import ssl
 from dataclasses import dataclass
 from pathlib import Path

@@ -1,4 +1,4 @@
-"""Remote MCP server transport — HTTP/SSE with mTLS. Mirrors Node.js transport.ts."""
+"""Remote MCP server transport — HTTP/SSE with mTLS."""
 from __future__ import annotations
 
 from contextlib import asynccontextmanager

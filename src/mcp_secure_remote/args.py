@@ -1,4 +1,4 @@
-"""CLI argument parser — mirrors Node.js args.ts logic."""
+"""CLI argument parser."""
 import os
 import re
 import sys

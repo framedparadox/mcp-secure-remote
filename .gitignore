@@ -30,4 +30,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
-node_modules/*
+
+# Dev certificates (never commit)
+certs/*
