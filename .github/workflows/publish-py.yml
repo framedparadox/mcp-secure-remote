@@ -6,8 +6,31 @@ on:
   workflow_dispatch:
 
 jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest tests/ -v
+
   build:
     name: Build distribution
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,19 +38,26 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: "3.11"
 
       - name: Install build tools
-        run: python -m pip install --upgrade build
+        run: python -m pip install --upgrade pip build
+
+      - name: Validate pyproject.toml
+        run: python -m build --help > /dev/null
 
       - name: Build package
         run: python -m build
+
+      - name: List dist contents
+        run: ls -la dist/
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
+          retention-days: 1
 
   publish-pypi:
     name: Publish to PyPI
@@ -37,7 +67,7 @@ jobs:
       name: pypi
       url: https://pypi.org/p/mcp-secure-remote
     permissions:
-      id-token: write  # required for trusted publishing (OIDC)
+      id-token: write  # Required for trusted publishing (OIDC)
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
@@ -47,3 +77,7 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Create deployment status
+        if: success()
+        run: echo "✅ Package published to PyPI"
