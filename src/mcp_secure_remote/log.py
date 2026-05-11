@@ -3,6 +3,11 @@ import sys
 import json
 from datetime import datetime, timezone
 
+try:
+    BaseExceptionGroup
+except NameError:
+    from exceptiongroup import BaseExceptionGroup
+
 _debug_enabled = False
 
 

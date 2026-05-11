@@ -2,6 +2,11 @@
 import json
 import pytest
 
+try:
+    BaseExceptionGroup
+except NameError:
+    from exceptiongroup import BaseExceptionGroup
+
 from mcp_secure_remote.log import (
     _debug_enabled,
     _serialize,
