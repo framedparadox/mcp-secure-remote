@@ -1,6 +1,6 @@
 node_modules/*
 dist/*
 certs/*
-local-testing/configs/*
-local-testing/dist/*
-local-testing/node_modules/*
+local-testing/*
+docs/*
+.dockerignore
