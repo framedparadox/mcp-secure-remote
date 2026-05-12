@@ -39,6 +39,7 @@
     "test:watch": "vitest --passWithNoTests",
     "test:coverage": "vitest run --coverage --passWithNoTests",
     "test:unit": "vitest run test/unit --passWithNoTests",
+    "test:integration": "vitest run test/integration --passWithNoTests",
     "start:proxy": "node dist/proxy.js",
     "start:client": "node dist/client.js",
     "prepack": "npm run build",
