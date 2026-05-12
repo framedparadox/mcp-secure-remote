@@ -168,11 +168,9 @@ class TestConnectToRemoteServer:
             raise AssertionError("SSE should not be attempted when HTTP succeeds")
             yield  # pragma: no cover
 
-        with (
-            patch("mcp_secure_remote.transport._try_streamable_http", fake_http),
-            patch("mcp_secure_remote.transport._try_sse", fake_sse),
-            patch("mcp_secure_remote.transport.has_mtls_config", return_value=False),
-        ):
+        with patch("mcp_secure_remote.transport._try_streamable_http", fake_http), \
+             patch("mcp_secure_remote.transport._try_sse", fake_sse), \
+             patch("mcp_secure_remote.transport.has_mtls_config", return_value=False):
             async with connect_to_remote_server(
                 "https://example.com", {}, "http-first", MtlsOptions()
             ) as streams:
@@ -192,11 +190,9 @@ class TestConnectToRemoteServer:
         async def fake_sse(*a, **kw):
             yield (read, write)
 
-        with (
-            patch("mcp_secure_remote.transport._try_streamable_http", failing_http),
-            patch("mcp_secure_remote.transport._try_sse", fake_sse),
-            patch("mcp_secure_remote.transport.has_mtls_config", return_value=False),
-        ):
+        with patch("mcp_secure_remote.transport._try_streamable_http", failing_http), \
+             patch("mcp_secure_remote.transport._try_sse", fake_sse), \
+             patch("mcp_secure_remote.transport.has_mtls_config", return_value=False):
             async with connect_to_remote_server(
                 "https://example.com", {}, "http-first", MtlsOptions()
             ) as streams:
@@ -216,11 +212,9 @@ class TestConnectToRemoteServer:
         async def fake_sse(*a, **kw):
             yield (read, write)
 
-        with (
-            patch("mcp_secure_remote.transport._try_streamable_http", fake_http),
-            patch("mcp_secure_remote.transport._try_sse", fake_sse),
-            patch("mcp_secure_remote.transport.has_mtls_config", return_value=False),
-        ):
+        with patch("mcp_secure_remote.transport._try_streamable_http", fake_http), \
+             patch("mcp_secure_remote.transport._try_sse", fake_sse), \
+             patch("mcp_secure_remote.transport.has_mtls_config", return_value=False):
             async with connect_to_remote_server(
                 "https://example.com", {}, "sse-first", MtlsOptions()
             ) as streams:
@@ -239,11 +233,9 @@ class TestConnectToRemoteServer:
             raise AssertionError("SSE must not be attempted with http-only strategy")
             yield  # pragma: no cover
 
-        with (
-            patch("mcp_secure_remote.transport._try_streamable_http", failing_http),
-            patch("mcp_secure_remote.transport._try_sse", fake_sse),
-            patch("mcp_secure_remote.transport.has_mtls_config", return_value=False),
-        ):
+        with patch("mcp_secure_remote.transport._try_streamable_http", failing_http), \
+             patch("mcp_secure_remote.transport._try_sse", fake_sse), \
+             patch("mcp_secure_remote.transport.has_mtls_config", return_value=False):
             with pytest.raises(ConnectionError, match="HTTP not supported"):
                 async with connect_to_remote_server(
                     "https://example.com", {}, "http-only", MtlsOptions()
@@ -263,11 +255,9 @@ class TestConnectToRemoteServer:
             raise ConnectionError("SSE not supported")
             yield  # pragma: no cover
 
-        with (
-            patch("mcp_secure_remote.transport._try_streamable_http", fake_http),
-            patch("mcp_secure_remote.transport._try_sse", failing_sse),
-            patch("mcp_secure_remote.transport.has_mtls_config", return_value=False),
-        ):
+        with patch("mcp_secure_remote.transport._try_streamable_http", fake_http), \
+             patch("mcp_secure_remote.transport._try_sse", failing_sse), \
+             patch("mcp_secure_remote.transport.has_mtls_config", return_value=False):
             with pytest.raises(ConnectionError, match="SSE not supported"):
                 async with connect_to_remote_server(
                     "https://example.com", {}, "sse-only", MtlsOptions()
@@ -287,11 +277,9 @@ class TestConnectToRemoteServer:
             raise ConnectionError("SSE failed")
             yield  # pragma: no cover
 
-        with (
-            patch("mcp_secure_remote.transport._try_streamable_http", failing_http),
-            patch("mcp_secure_remote.transport._try_sse", failing_sse),
-            patch("mcp_secure_remote.transport.has_mtls_config", return_value=False),
-        ):
+        with patch("mcp_secure_remote.transport._try_streamable_http", failing_http), \
+             patch("mcp_secure_remote.transport._try_sse", failing_sse), \
+             patch("mcp_secure_remote.transport.has_mtls_config", return_value=False):
             with pytest.raises(ConnectionError, match="SSE failed"):
                 async with connect_to_remote_server(
                     "https://example.com", {}, "http-first", MtlsOptions()
@@ -307,11 +295,9 @@ class TestConnectToRemoteServer:
         async def fake_http(*a, **kw):
             yield (read, write)
 
-        with (
-            patch("mcp_secure_remote.transport._try_streamable_http", fake_http),
-            patch("mcp_secure_remote.transport.has_mtls_config", return_value=True),
-            patch("mcp_secure_remote.transport.build_ssl_context") as mock_build,
-        ):
+        with patch("mcp_secure_remote.transport._try_streamable_http", fake_http), \
+             patch("mcp_secure_remote.transport.has_mtls_config", return_value=True), \
+             patch("mcp_secure_remote.transport.build_ssl_context") as mock_build:
             mock_build.return_value = MagicMock()
             async with connect_to_remote_server(
                 "https://example.com", {}, "http-only", MtlsOptions()
@@ -328,11 +314,9 @@ class TestConnectToRemoteServer:
         async def fake_http(*a, **kw):
             yield (read, write)
 
-        with (
-            patch("mcp_secure_remote.transport._try_streamable_http", fake_http),
-            patch("mcp_secure_remote.transport.has_mtls_config", return_value=False),
-            patch("mcp_secure_remote.transport.build_ssl_context") as mock_build,
-        ):
+        with patch("mcp_secure_remote.transport._try_streamable_http", fake_http), \
+             patch("mcp_secure_remote.transport.has_mtls_config", return_value=False), \
+             patch("mcp_secure_remote.transport.build_ssl_context") as mock_build:
             async with connect_to_remote_server(
                 "https://example.com", {}, "http-only", MtlsOptions()
             ):
