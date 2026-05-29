@@ -31,8 +31,9 @@ custom client that speaks the MCP stdio transport.
 10. [Testing your setup](#testing-your-setup)
 11. [Security notes](#security-notes)
 12. [Troubleshooting](#troubleshooting)
-13. [Development](#development)
-14. [License](#license)
+13. [Docker](#docker)
+14. [Development](#development)
+15. [License](#license)
 
 ---
 
@@ -176,6 +177,8 @@ named flag.
   with `http://` triggers a warning (cert is not sent over plain HTTP).
 - Unknown `--flags` cause parse failure with exit code 2.
 - Argument errors exit with code 2; runtime errors exit with code 1.
+- URLs with embedded credentials, such as `https://user:pass@example.com/mcp`,
+  are rejected. Use `--header` or environment configuration for credentials.
 
 ## Environment variables
 
@@ -406,11 +409,22 @@ Add `--debug` for per-message tracing.
   `--allow-http` is explicitly set. Proxy additionally warns when mTLS
   flags are combined with `http://` because the client cert will not be
   sent.
+- **Redirects are rejected.** Outbound transport requests do not follow HTTP
+  redirects, which prevents a remote endpoint from bouncing the client to a
+  different host and reusing the configured TLS credentials there.
 - **Skip-verify prints a warning.** `--tls-insecure-skip-verify` disables
   server certificate validation; intended for local dev loops only.
 - **Prefer env vars for passphrases.** Anything on the CLI may leak into
   process listings, shell history, or agent logs.
+- **Debug logging redacts secrets.** The bundled client and proxy avoid
+  printing TLS passphrases or header values in `--debug` output. Proxy message
+  tracing logs only JSON-RPC metadata, not full tool arguments or results.
+- **Embedded URL credentials are refused.** Userinfo in the remote URL is not
+  accepted because it can leak through process lists and logs.
 - **Proxy logs to stderr.** stdout is reserved for the MCP JSON-RPC stream.
+- **Client output is terminal-sanitized.** Tool names, descriptions,
+  resources, and prompts received from the remote server are escaped before
+  being written to the terminal.
 - **No credential persistence.** Proxy does not write certs, keys, or
   tokens to disk.
 - **Pin TLS 1.3** (`--tls-min-version TLSv1.3`) when the server supports
@@ -449,16 +463,99 @@ transport the server actually implements. Add `--debug`.
 Upgrade — prior versions double-started the transport. Fixed in current
 release.
 
+## Docker
+
+A multi-stage `Dockerfile` is included. The build stage compiles TypeScript;
+the runtime stage contains only production dependencies and the compiled
+`dist/` output — no dev tooling in the final image.
+
+**Build the image:**
+
+```bash
+docker build -t mcp-secure-remote .
+```
+
+**Run the proxy** (no mTLS — plain HTTPS server):
+
+```bash
+docker run -i mcp-secure-remote https://mcp.example.com/mcp
+```
+
+The `-i` flag is required because the proxy communicates over **stdin/stdout**.
+
+**Run the proxy with mTLS** using Docker secrets (recommended for production):
+
+```bash
+docker run -i \
+  -e MCP_REMOTE_TLS_CERT=/run/secrets/client.crt \
+  -e MCP_REMOTE_TLS_KEY=/run/secrets/client.key \
+  -e MCP_REMOTE_TLS_CA=/run/secrets/ca-bundle.pem \
+  --mount type=secret,id=client.crt \
+  --mount type=secret,id=client.key \
+  --mount type=secret,id=ca-bundle.pem \
+  mcp-secure-remote https://mcp.example.com/mcp
+```
+
+**Run the proxy with mTLS** by bind-mounting a local cert directory:
+
+```bash
+docker run -i \
+  -v /path/to/local/certs:/certs:ro \
+  -e MCP_REMOTE_TLS_CERT=/certs/client.crt \
+  -e MCP_REMOTE_TLS_KEY=/certs/client.key \
+  -e MCP_REMOTE_TLS_CA=/certs/ca-bundle.pem \
+  mcp-secure-remote https://mcp.example.com/mcp
+```
+
+All TLS configuration is supplied via `MCP_REMOTE_TLS_*` environment variables
+(see [Environment variables](#environment-variables)). No certs are baked into
+the image.
+
+**Run the client** (verify handshake / enumerate server capabilities):
+
+```bash
+docker run --rm \
+  -v /path/to/local/certs:/certs:ro \
+  -e MCP_REMOTE_TLS_CERT=/certs/client.crt \
+  -e MCP_REMOTE_TLS_KEY=/certs/client.key \
+  -e MCP_REMOTE_TLS_CA=/certs/ca-bundle.pem \
+  --entrypoint node mcp-secure-remote dist/client.js \
+  https://mcp.example.com/mcp
+```
+
+**Pass extra CLI flags** by appending them after the image name:
+
+```bash
+docker run -i mcp-secure-remote \
+  https://mcp.example.com/mcp \
+  --transport sse-only \
+  --tls-min-version TLSv1.3 \
+  --debug
+```
+
+---
+
 ## Development
 
 ```bash
 npm install
 npm run typecheck
+npm run test
+npm run test:coverage
 npm run build
+npm pack --dry-run
 ```
 
 Build artifacts land in `dist/`. `dist/proxy.js` and `dist/client.js` are
-the two bin entrypoints.
+the two bin entrypoints. `npm pack` and `npm publish` rebuild `dist/` first via
+the package lifecycle scripts.
+
+Test script summary:
+
+- `npm run test` — run all tests once.
+- `npm run test:watch` — run tests in watch mode.
+- `npm run test:coverage` — run tests and generate coverage output.
+- `npm run test:unit` — run tests under `test/unit`.
 
 ## License
 

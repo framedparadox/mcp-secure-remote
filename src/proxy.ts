@@ -7,11 +7,11 @@
  * environment variables).
  */
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { parseCommandLineArgs, printUsage } from './lib/args.js'
+import { parseCommandLineArgs, printUsage, sanitizeServerUrlForLog } from './lib/args.js'
 import { debugLog, log, setDebug } from './lib/log.js'
 import { connectToRemoteServer } from './lib/transport.js'
 import { mcpProxy } from './lib/proxy-core.js'
-import type { MtlsOptions } from './lib/mtls.js'
+import { sanitizeParsedArgsForLog } from './lib/sanitize.js'
 
 async function main(): Promise<void> {
   let parsed
@@ -24,13 +24,8 @@ async function main(): Promise<void> {
   }
 
   setDebug(parsed.debug)
-  debugLog('parsed arguments', {
-    serverUrl: parsed.serverUrl,
-    transportStrategy: parsed.transportStrategy,
-    allowHttp: parsed.allowHttp,
-    headers: Object.keys(parsed.headers),
-    mtls: sanitizeMtlsForLog(parsed.mtls),
-  })
+  const safeServerUrl = sanitizeServerUrlForLog(parsed.serverUrl)
+  debugLog('parsed arguments', sanitizeParsedArgsForLog(parsed))
 
   const localTransport = new StdioServerTransport()
 
@@ -44,7 +39,7 @@ async function main(): Promise<void> {
   mcpProxy({ transportToClient: localTransport, transportToServer: remoteTransport })
 
   await localTransport.start()
-  log(`Proxy established: stdio <-> ${parsed.serverUrl}`)
+  log(`Proxy established: stdio <-> ${safeServerUrl}`)
 
   let shuttingDown = false
   const shutdown = async (signal: NodeJS.Signals) => {
@@ -61,18 +56,6 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'))
 }
 
-function sanitizeMtlsForLog(mtls: MtlsOptions): Record<string, unknown> {
-  return {
-    certPath: mtls.certPath,
-    keyPath: mtls.keyPath,
-    caPath: mtls.caPath,
-    pfxPath: mtls.pfxPath,
-    servername: mtls.servername,
-    minVersion: mtls.minVersion,
-    rejectUnauthorized: mtls.rejectUnauthorized,
-    passphrase: mtls.passphrase ? '***' : undefined,
-  }
-}
 
 main().catch((err) => {
   log('Fatal error:', err)

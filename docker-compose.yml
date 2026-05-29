@@ -1,0 +1,18 @@
+services:
+  mcp-secure-remote:
+    build: .
+    image: mcp-secure-remote:local
+    stdin_open: true
+    tty: false
+    environment:
+      MCP_REMOTE_TLS_CERT: ${MCP_REMOTE_TLS_CERT:-/certs/client.crt}
+      MCP_REMOTE_TLS_KEY: ${MCP_REMOTE_TLS_KEY:-/certs/client.key}
+      MCP_REMOTE_TLS_CA: ${MCP_REMOTE_TLS_CA:-/certs/ca-bundle.pem}
+      MCP_REMOTE_TLS_PFX: ${MCP_REMOTE_TLS_PFX:-}
+      MCP_REMOTE_TLS_PASSPHRASE: ${MCP_REMOTE_TLS_PASSPHRASE:-}
+      MCP_REMOTE_TLS_SERVERNAME: ${MCP_REMOTE_TLS_SERVERNAME:-}
+      MCP_REMOTE_TLS_MIN_VERSION: ${MCP_REMOTE_TLS_MIN_VERSION:-TLSv1.2}
+      MCP_REMOTE_TLS_INSECURE: ${MCP_REMOTE_TLS_INSECURE:-false}
+    volumes:
+      - ${CERTS_DIR:-./certs/dev}:/certs:ro
+    command: ["https://mcp.example.com/mcp"]

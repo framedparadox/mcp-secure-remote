@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { parseCommandLineArgs, printUsage } from './lib/args.js'
 import { debugLog, log, setDebug } from './lib/log.js'
 import { connectToRemoteServer } from './lib/transport.js'
+import { sanitizeParsedArgsForLog, sanitizeTerminalText } from './lib/sanitize.js'
 
 async function main(): Promise<void> {
   let parsed
@@ -19,7 +20,7 @@ async function main(): Promise<void> {
   }
 
   setDebug(parsed.debug)
-  debugLog('parsed arguments', parsed)
+  debugLog('parsed arguments', sanitizeParsedArgsForLog(parsed))
 
   const transport = await connectToRemoteServer({
     serverUrl: parsed.serverUrl,
@@ -45,21 +46,25 @@ async function main(): Promise<void> {
       const tools = await client.listTools()
       log(`Tools (${tools.tools.length}):`)
       for (const tool of tools.tools) {
-        process.stdout.write(`  - ${tool.name}${tool.description ? ` – ${tool.description}` : ''}\n`)
+        process.stdout.write(
+          `  - ${sanitizeTerminalText(tool.name)}${tool.description ? ` – ${sanitizeTerminalText(tool.description)}` : ''}\n`,
+        )
       }
     }
     if (capabilities.resources) {
       const resources = await client.listResources()
       log(`Resources (${resources.resources.length}):`)
       for (const res of resources.resources) {
-        process.stdout.write(`  - ${res.uri}${res.name ? ` (${res.name})` : ''}\n`)
+        process.stdout.write(
+          `  - ${sanitizeTerminalText(res.uri)}${res.name ? ` (${sanitizeTerminalText(res.name)})` : ''}\n`,
+        )
       }
     }
     if (capabilities.prompts) {
       const prompts = await client.listPrompts()
       log(`Prompts (${prompts.prompts.length}):`)
       for (const prompt of prompts.prompts) {
-        process.stdout.write(`  - ${prompt.name}\n`)
+        process.stdout.write(`  - ${sanitizeTerminalText(prompt.name)}\n`)
       }
     }
   } finally {

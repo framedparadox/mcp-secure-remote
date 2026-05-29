@@ -13,6 +13,26 @@ export interface ParsedArgs {
 
 const VALID_TRANSPORTS: TransportStrategy[] = ['http-first', 'sse-first', 'http-only', 'sse-only']
 
+/**
+ * RFC 7230 §3.2.6: a header field-name must be a sequence of "token" chars.
+ * Reject anything outside that alphabet so CRLF-injection or non-printable
+ * characters cannot reach undici / the wire even if the library catches it
+ * later.
+ */
+const VALID_HEADER_NAME_RE = /^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$/
+
+function validateHttpHeader(name: string, value: string): void {
+  if (!VALID_HEADER_NAME_RE.test(name)) {
+    throw new Error(
+      `Invalid header name "${name}": must be a valid RFC 7230 HTTP token (alphanumerics and !#$%&'*+-.^_\`|~)`,
+    )
+  }
+  // Bare CR, LF, or NUL in a header value enables CRLF-injection attacks.
+  if (/[\r\n\x00]/.test(value)) {
+    throw new Error(`Header value for "${name}" must not contain CR, LF, or NUL characters`)
+  }
+}
+
 function envOrUndefined(name: string): string | undefined {
   const v = process.env[name]
   return v && v.length > 0 ? v : undefined
@@ -68,6 +88,7 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
         const name = raw.slice(0, idx).trim()
         const value = raw.slice(idx + 1).trim()
         if (!name) throw new Error(`--header has empty name: "${raw}"`)
+        validateHttpHeader(name, value)
         headers[name] = value
         break
       }
@@ -146,6 +167,9 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
   } catch {
     throw new Error(`Invalid server URL: ${serverUrl}`)
   }
+  if (parsed.username || parsed.password) {
+    throw new Error('Server URL must not contain embedded credentials; use --header or environment configuration instead.')
+  }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     throw new Error(`Server URL must use http(s), got: ${parsed.protocol}`)
   }
@@ -164,6 +188,17 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
   }
 
   return { serverUrl, headers, transportStrategy, debug, allowHttp, mtls }
+}
+
+export function sanitizeServerUrlForLog(serverUrl: string): string {
+  try {
+    const parsed = new URL(serverUrl)
+    parsed.username = ''
+    parsed.password = ''
+    return parsed.toString()
+  } catch {
+    return '<invalid-url>'
+  }
 }
 
 function hasAnyMtlsFlag(m: MtlsOptions): boolean {
