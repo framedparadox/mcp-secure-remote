@@ -1,6 +1,7 @@
 import type { MtlsOptions } from './mtls.js'
 import { mergeAuthHeaders, type AuthOptions } from './auth-headers.js'
 import { validateRemoteUrl } from './url-security.js'
+import { DEFAULT_MAX_MESSAGE_BYTES, parseMaxMessageBytes } from './message-size.js'
 
 export type TransportStrategy = 'http-first' | 'sse-first' | 'http-only' | 'sse-only'
 
@@ -11,6 +12,7 @@ export interface ParsedArgs {
   debug: boolean
   allowHttp: boolean
   allowPrivateUrls: boolean
+  maxMessageBytes: number
   mtls: MtlsOptions
   auth: AuthOptions
 }
@@ -58,6 +60,8 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
   let debug = false
   let allowHttp = false
   let allowPrivateUrls = false
+  let maxMessageBytes = DEFAULT_MAX_MESSAGE_BYTES
+  const tlsPins: string[] = []
 
   const auth: AuthOptions = {
     bearer: envOrUndefined('MCP_REMOTE_AUTH_BEARER'),
@@ -72,6 +76,15 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
   }
   const envInsecure = envOrUndefined('MCP_REMOTE_TLS_INSECURE')
 
+  const envMaxMessageBytes = envOrUndefined('MCP_REMOTE_MAX_MESSAGE_BYTES')
+  if (envMaxMessageBytes) {
+    maxMessageBytes = parseMaxMessageBytes(envMaxMessageBytes, 'MCP_REMOTE_MAX_MESSAGE_BYTES')
+  }
+  const envTlsPin = envOrUndefined('MCP_REMOTE_TLS_PIN_SHA256')
+  if (envTlsPin) {
+    tlsPins.push(...envTlsPin.split(',').map((pin) => pin.trim()).filter(Boolean))
+  }
+
   const mtls: MtlsOptions = {
     certPath: envOrUndefined('MCP_REMOTE_TLS_CERT'),
     keyPath: envOrUndefined('MCP_REMOTE_TLS_KEY'),
@@ -81,6 +94,7 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
     servername: envOrUndefined('MCP_REMOTE_TLS_SERVERNAME'),
     minVersion: envMinVersion as MtlsOptions['minVersion'],
     rejectUnauthorized: envInsecure && /^(1|true|yes)$/i.test(envInsecure) ? false : undefined,
+    pinSha256: tlsPins.length > 0 ? tlsPins : undefined,
   }
 
   const take = (flag: string): string => {
@@ -120,6 +134,9 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
         break
       case '--allow-private-urls':
         allowPrivateUrls = true
+        break
+      case '--max-message-bytes':
+        maxMessageBytes = parseMaxMessageBytes(take('--max-message-bytes'), '--max-message-bytes')
         break
 
       case '--auth-bearer':
@@ -165,6 +182,9 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
       case '--tls-insecure-skip-verify':
       case '--tls-no-verify':
         mtls.rejectUnauthorized = false
+        break
+      case '--tls-pin-sha256':
+        tlsPins.push(take('--tls-pin-sha256'))
         break
 
       case '-h':
@@ -214,6 +234,9 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
       'WARNING: TLS server certificate verification disabled. This is insecure; use only for local development.\n',
     )
   }
+  if (mtls.pinSha256?.length && mtls.rejectUnauthorized === false) {
+    throw new Error('--tls-pin-sha256 cannot be combined with --tls-insecure-skip-verify')
+  }
 
   validateRemoteUrl(parsed, { allowPrivateUrls })
 
@@ -224,6 +247,10 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
     throw err instanceof Error ? err : new Error(String(err))
   }
 
+  if (tlsPins.length > 0) {
+    mtls.pinSha256 = tlsPins
+  }
+
   return {
     serverUrl,
     headers: mergedHeaders,
@@ -231,6 +258,7 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
     debug,
     allowHttp,
     allowPrivateUrls,
+    maxMessageBytes,
     mtls,
     auth,
   }
@@ -248,7 +276,9 @@ export function sanitizeServerUrlForLog(serverUrl: string): string {
 }
 
 function hasAnyMtlsFlag(m: MtlsOptions): boolean {
-  return Boolean(m.certPath || m.keyPath || m.pfxPath || m.caPath || m.passphrase || m.servername || m.minVersion)
+  return Boolean(
+    m.certPath || m.keyPath || m.pfxPath || m.caPath || m.passphrase || m.servername || m.minVersion || m.pinSha256?.length,
+  )
 }
 
 export function printUsage(): void {
@@ -263,6 +293,7 @@ export function printUsage(): void {
     '  --transport <strategy>      http-first | sse-first | http-only | sse-only (default: http-first).',
     '  --allow-http                Allow plain http:// URLs (disables the default https-only check).',
     '  --allow-private-urls        Allow localhost and private-network targets (local dev / mTLS lab).',
+    '  --max-message-bytes <n>     Drop JSON-RPC messages larger than n bytes (default: 10485760).',
     '  --debug                     Verbose logging to stderr.',
     '',
     'Application auth (supplement mTLS; sent as HTTP headers):',
@@ -279,12 +310,15 @@ export function printUsage(): void {
     '  --tls-pfx <path>            PKCS#12 bundle (alternative to --tls-cert/--tls-key).',
     '  --tls-servername <name>     SNI servername override.',
     '  --tls-min-version <ver>     TLSv1.2 or TLSv1.3.',
+    '  --tls-pin-sha256 <pin>      SHA-256 SPKI pin for server cert (repeatable; base64, hex, or sha256/…).',
     '  --tls-insecure-skip-verify  Disable server certificate validation (NOT for production).',
     '',
     'Environment variables (fallbacks for flags):',
     '  MCP_REMOTE_TLS_CERT, MCP_REMOTE_TLS_KEY, MCP_REMOTE_TLS_CA,',
     '  MCP_REMOTE_TLS_PASSPHRASE, MCP_REMOTE_TLS_PFX, MCP_REMOTE_TLS_SERVERNAME,',
     '  MCP_REMOTE_TLS_MIN_VERSION, MCP_REMOTE_TLS_INSECURE (=1 to skip server cert verify)',
+    '  MCP_REMOTE_TLS_PIN_SHA256 (comma-separated SPKI pins)',
+    '  MCP_REMOTE_MAX_MESSAGE_BYTES',
     '  MCP_REMOTE_AUTH_BEARER, MCP_REMOTE_AUTH_BASIC, MCP_REMOTE_API_KEY, MCP_REMOTE_API_KEY_HEADER',
   ]
   process.stderr.write(lines.join('\n') + '\n')

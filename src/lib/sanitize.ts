@@ -41,6 +41,7 @@ export function sanitizeMtlsForLog(mtls: MtlsOptions): Record<string, unknown> {
     minVersion: mtls.minVersion,
     rejectUnauthorized: mtls.rejectUnauthorized,
     passphrase: mtls.passphrase ? '***' : undefined,
+    pinCount: mtls.pinSha256?.length ?? 0,
   }
 }
 

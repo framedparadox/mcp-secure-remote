@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from .auth_headers import AuthOptions, merge_auth_headers
 from .http_headers import validate_http_header as _validate_http_header
+from .message_size import DEFAULT_MAX_MESSAGE_BYTES, parse_max_message_bytes
 from .mtls import MtlsOptions
 from .url_security import UrlSecurityOptions, validate_remote_url
 
@@ -22,6 +23,7 @@ class ParsedArgs:
     debug: bool
     allow_http: bool
     allow_private_urls: bool
+    max_message_bytes: int
     mtls: MtlsOptions
     auth: AuthOptions
 
@@ -42,6 +44,8 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
     debug = False
     allow_http = False
     allow_private_urls = False
+    max_message_bytes = DEFAULT_MAX_MESSAGE_BYTES
+    tls_pins: list[str] = []
 
     auth = AuthOptions(
         bearer=_env("MCP_REMOTE_AUTH_BEARER"),
@@ -59,6 +63,14 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
         False if env_insecure and env_insecure.lower() in ("1", "true", "yes") else None
     )
 
+    env_max_message_bytes = _env("MCP_REMOTE_MAX_MESSAGE_BYTES")
+    if env_max_message_bytes:
+        max_message_bytes = parse_max_message_bytes(env_max_message_bytes, "MCP_REMOTE_MAX_MESSAGE_BYTES")
+
+    env_tls_pin = _env("MCP_REMOTE_TLS_PIN_SHA256")
+    if env_tls_pin:
+        tls_pins.extend(pin.strip() for pin in env_tls_pin.split(",") if pin.strip())
+
     mtls = MtlsOptions(
         cert_path=_env("MCP_REMOTE_TLS_CERT"),
         key_path=_env("MCP_REMOTE_TLS_KEY"),
@@ -68,6 +80,7 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
         servername=_env("MCP_REMOTE_TLS_SERVERNAME"),
         min_version=env_min_version,  # type: ignore[arg-type]
         reject_unauthorized=reject_unauthorized if reject_unauthorized is not None else True,
+        pin_sha256=tls_pins or None,
     )
 
     def take(flag: str) -> str:
@@ -105,6 +118,9 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
         elif arg == "--allow-private-urls":
             allow_private_urls = True
 
+        elif arg == "--max-message-bytes":
+            max_message_bytes = parse_max_message_bytes(take("--max-message-bytes"), "--max-message-bytes")
+
         elif arg == "--auth-bearer":
             auth.bearer = take("--auth-bearer")
         elif arg == "--auth-basic":
@@ -135,6 +151,9 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
 
         elif arg in ("--tls-insecure-skip-verify", "--tls-no-verify"):
             mtls.reject_unauthorized = False
+
+        elif arg == "--tls-pin-sha256":
+            tls_pins.append(take("--tls-pin-sha256"))
 
         elif arg in ("-h", "--help"):
             print_usage()
@@ -181,6 +200,12 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
 
     validate_remote_url(server_url, UrlSecurityOptions(allow_private_urls=allow_private_urls))
 
+    if tls_pins:
+        mtls.pin_sha256 = tls_pins
+
+    if mtls.pin_sha256 and not mtls.reject_unauthorized:
+        raise ValueError("--tls-pin-sha256 cannot be combined with --tls-insecure-skip-verify")
+
     merged_headers = merge_auth_headers(headers, auth)
 
     return ParsedArgs(
@@ -190,13 +215,23 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
         debug=debug,
         allow_http=allow_http,
         allow_private_urls=allow_private_urls,
+        max_message_bytes=max_message_bytes,
         mtls=mtls,
         auth=auth,
     )
 
 
 def _has_any_mtls_flag(m: MtlsOptions) -> bool:
-    return bool(m.cert_path or m.key_path or m.pfx_path or m.ca_path or m.passphrase or m.servername or m.min_version)
+    return bool(
+        m.cert_path
+        or m.key_path
+        or m.pfx_path
+        or m.ca_path
+        or m.passphrase
+        or m.servername
+        or m.min_version
+        or m.pin_sha256
+    )
 
 
 def print_usage() -> None:
@@ -211,6 +246,7 @@ def print_usage() -> None:
         "  --transport <strategy>      http-first | sse-first | http-only | sse-only (default: http-first).",
         "  --allow-http                Allow plain http:// URLs (disables the default https-only check).",
         "  --allow-private-urls        Allow localhost and private-network targets (local dev / mTLS lab).",
+        "  --max-message-bytes <n>     Drop JSON-RPC messages larger than n bytes (default: 10485760).",
         "  --debug                     Verbose logging to stderr.",
         "",
         "Application auth (supplement mTLS; sent as HTTP headers):",
@@ -228,12 +264,15 @@ def print_usage() -> None:
         "  --tls-pfx <path>            PKCS#12 bundle (alternative to --tls-cert/--tls-key).",
         "  --tls-servername <name>     SNI servername override.",
         "  --tls-min-version <ver>     TLSv1.2 or TLSv1.3.",
+        "  --tls-pin-sha256 <pin>      SHA-256 SPKI pin for server cert (repeatable; base64, hex, or sha256/…).",
         "  --tls-insecure-skip-verify  Disable server certificate validation (NOT for production).",
         "",
         "Environment variables (fallbacks for flags):",
         "  MCP_REMOTE_TLS_CERT, MCP_REMOTE_TLS_KEY, MCP_REMOTE_TLS_CA,",
         "  MCP_REMOTE_TLS_PASSPHRASE, MCP_REMOTE_TLS_PFX, MCP_REMOTE_TLS_SERVERNAME,",
         "  MCP_REMOTE_TLS_MIN_VERSION, MCP_REMOTE_TLS_INSECURE (=1 to skip server cert verify)",
+        "  MCP_REMOTE_TLS_PIN_SHA256 (comma-separated SPKI pins)",
+        "  MCP_REMOTE_MAX_MESSAGE_BYTES",
         "  MCP_REMOTE_AUTH_BEARER, MCP_REMOTE_AUTH_BASIC, MCP_REMOTE_API_KEY, MCP_REMOTE_API_KEY_HEADER",
     ]
     sys.stderr.write("\n".join(lines) + "\n")

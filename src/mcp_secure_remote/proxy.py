@@ -15,6 +15,7 @@ from mcp.server.stdio import stdio_server  # type: ignore[import]
 
 from .args import parse_args, print_usage
 from .log import debug_log, flatten_exception, log, set_debug
+from .message_size import is_within_message_limit, message_byte_length
 from .sanitize import sanitize_parsed_args_for_log, sanitize_server_url_for_log, summarize_message
 from .transport import connect_to_remote_server
 
@@ -47,6 +48,13 @@ async def _run() -> None:
                         # remote transport; drop it and just record the parse error.
                         debug_log("client -> server (dropped parse error)", str(message))
                         continue
+                    if not is_within_message_limit(message, parsed.max_message_bytes):
+                        size = message_byte_length(message)
+                        log(
+                            f"Dropping oversized client -> server message "
+                            f"({size} bytes > {parsed.max_message_bytes} byte limit)"
+                        )
+                        continue
                     debug_log("client -> server", summarize_message(message))
                     await remote_write.send(message)
 
@@ -56,6 +64,13 @@ async def _run() -> None:
                         # Same hazard on the remote side — drop it before it
                         # tears down stdout_writer with an AttributeError.
                         debug_log("server -> client (dropped parse error)", str(message))
+                        continue
+                    if not is_within_message_limit(message, parsed.max_message_bytes):
+                        size = message_byte_length(message)
+                        log(
+                            f"Dropping oversized server -> client message "
+                            f"({size} bytes > {parsed.max_message_bytes} byte limit)"
+                        )
                         continue
                     debug_log("server -> client", summarize_message(message))
                     await local_write.send(message)

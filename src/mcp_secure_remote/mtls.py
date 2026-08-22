@@ -14,6 +14,7 @@ class MtlsOptions:
     servername: str | None = None
     min_version: str | None = None        # "TLSv1.2" | "TLSv1.3"
     reject_unauthorized: bool = True
+    pin_sha256: list[str] | None = None
 
 
 def has_mtls_config(opts: MtlsOptions) -> bool:
@@ -25,6 +26,7 @@ def has_mtls_config(opts: MtlsOptions) -> bool:
         or opts.passphrase
         or opts.servername
         or opts.min_version
+        or opts.pin_sha256
         or not opts.reject_unauthorized
     )
 
@@ -74,6 +76,11 @@ def build_ssl_context(opts: MtlsOptions) -> ssl.SSLContext:
     if not opts.reject_unauthorized:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
+
+    if opts.pin_sha256:
+        from .tls_pin import apply_tls_pins
+
+        apply_tls_pins(ctx, opts.pin_sha256)
 
     if opts.servername:
         _apply_servername_override(ctx, opts.servername)

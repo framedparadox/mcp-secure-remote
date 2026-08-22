@@ -895,6 +895,13 @@ For a local server that actually requires a client cert, use the
   are zero-filled and unlinked).
 - **TLS 1.2 floor.** Both runtimes enforce TLS 1.2+ even without
   `--tls-min-version`. Pin `TLSv1.3` when the server allows it.
+- **Message size cap.** JSON-RPC messages larger than `--max-message-bytes`
+  (default 10 MiB; env `MCP_REMOTE_MAX_MESSAGE_BYTES`) are dropped and
+  logged — they are not forwarded across the stdio bridge.
+- **TLS SPKI pinning.** Repeat `--tls-pin-sha256` (or env
+  `MCP_REMOTE_TLS_PIN_SHA256`, comma-separated) to require the server leaf
+  certificate public key to match a known SHA-256 SPKI pin (base64, hex, or
+  `sha256/…`). Incompatible with `--tls-insecure-skip-verify`.
 
 ---
 

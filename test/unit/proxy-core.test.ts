@@ -213,3 +213,28 @@ describe('mcpProxy – error handlers', () => {
     expect(output).toContain('Remote transport error')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Message size limits
+// ---------------------------------------------------------------------------
+describe('mcpProxy – message size limits', () => {
+  it('drops oversized client messages', async () => {
+    const client = makeTransport()
+    const server = makeTransport()
+    mcpProxy({ transportToClient: client, transportToServer: server, maxMessageBytes: 32 })
+
+    client.onmessage!({ jsonrpc: '2.0', method: 'x'.repeat(100), id: 1 })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(server.sentMessages).toHaveLength(0)
+  })
+
+  it('drops oversized server messages', async () => {
+    const client = makeTransport()
+    const server = makeTransport()
+    mcpProxy({ transportToClient: client, transportToServer: server, maxMessageBytes: 32 })
+
+    server.onmessage!({ jsonrpc: '2.0', result: 'y'.repeat(100), id: 2 })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(client.sentMessages).toHaveLength(0)
+  })
+})

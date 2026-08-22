@@ -49,7 +49,9 @@ async def connect_to_remote_server(
     ssl_context = None
     if has_mtls_config(mtls):
         ssl_context = build_ssl_context(mtls)
-        if mtls.servername:
+        if mtls.pin_sha256:
+            log("TLS SPKI pinning enabled for outbound requests")
+        elif mtls.servername:
             log(f"mTLS enabled; SNI override: {mtls.servername}")
         else:
             log("mTLS enabled for outbound requests")

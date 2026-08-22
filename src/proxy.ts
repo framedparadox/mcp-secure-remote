@@ -36,7 +36,11 @@ async function main(): Promise<void> {
     mtls: parsed.mtls,
   })
 
-  mcpProxy({ transportToClient: localTransport, transportToServer: remoteTransport })
+  mcpProxy({
+    transportToClient: localTransport,
+    transportToServer: remoteTransport,
+    maxMessageBytes: parsed.maxMessageBytes,
+  })
 
   await localTransport.start()
   log(`Proxy established: stdio <-> ${safeServerUrl}`)

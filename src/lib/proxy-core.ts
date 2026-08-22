@@ -1,9 +1,16 @@
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { debugLog, log } from './log.js'
+import {
+  DEFAULT_MAX_MESSAGE_BYTES,
+  isWithinMessageLimit,
+  logOversizedMessage,
+  messageByteLength,
+} from './message-size.js'
 
 export interface McpProxyOptions {
   transportToClient: Transport
   transportToServer: Transport
+  maxMessageBytes?: number
 }
 
 /**
@@ -13,13 +20,21 @@ export interface McpProxyOptions {
  * When either side closes or errors, the opposite side is torn down so the
  * process can exit cleanly.
  */
-export function mcpProxy({ transportToClient, transportToServer }: McpProxyOptions): void {
+export function mcpProxy({
+  transportToClient,
+  transportToServer,
+  maxMessageBytes = DEFAULT_MAX_MESSAGE_BYTES,
+}: McpProxyOptions): void {
   let clientClosed = false
   let serverClosed = false
 
   transportToClient.onmessage = (message) => {
     if (message instanceof Error) {
       debugLog('client -> server (dropped parse error)', String(message))
+      return
+    }
+    if (!isWithinMessageLimit(message, maxMessageBytes)) {
+      logOversizedMessage('client -> server', messageByteLength(message), maxMessageBytes)
       return
     }
     debugLog('client -> server', summarizeMessage(message))
@@ -31,6 +46,10 @@ export function mcpProxy({ transportToClient, transportToServer }: McpProxyOptio
   transportToServer.onmessage = (message) => {
     if (message instanceof Error) {
       debugLog('server -> client (dropped parse error)', String(message))
+      return
+    }
+    if (!isWithinMessageLimit(message, maxMessageBytes)) {
+      logOversizedMessage('server -> client', messageByteLength(message), maxMessageBytes)
       return
     }
     debugLog('server -> client', summarizeMessage(message))

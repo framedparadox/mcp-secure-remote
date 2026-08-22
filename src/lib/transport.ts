@@ -85,7 +85,11 @@ export async function connectToRemoteServer({
   let dispatcher: UndiciAgent | undefined
   if (hasMtlsConfig(mtls)) {
     dispatcher = buildMtlsDispatcher(mtls)
-    log('mTLS enabled for outbound requests')
+    if (mtls.pinSha256?.length) {
+      log('TLS SPKI pinning enabled for outbound requests')
+    } else {
+      log('mTLS enabled for outbound requests')
+    }
   } else {
     debugLog('no mTLS configuration supplied; using default fetch')
   }
