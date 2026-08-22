@@ -29,13 +29,23 @@ def has_mtls_config(opts: MtlsOptions) -> bool:
     )
 
 
+def _create_verify_context(ca_path: str | None) -> ssl.SSLContext:
+    """Build a server-auth context, pinning trust to *ca_path* when provided."""
+    if ca_path:
+        try:
+            return ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=ca_path)
+        except (FileNotFoundError, OSError) as e:
+            raise ValueError(f"Unable to load CA bundle at '{ca_path}': {e}") from e
+    return ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+
+
 def build_ssl_context(opts: MtlsOptions) -> ssl.SSLContext:
     if opts.pfx_path:
         if opts.cert_path or opts.key_path:
             raise ValueError("Use either --tls-pfx OR --tls-cert/--tls-key, not both.")
         ctx = _build_from_pfx(opts)
     else:
-        ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        ctx = _create_verify_context(opts.ca_path)
         if opts.cert_path or opts.key_path:
             if not opts.cert_path or not opts.key_path:
                 raise ValueError("Both --tls-cert and --tls-key must be provided together.")
@@ -52,12 +62,6 @@ def build_ssl_context(opts: MtlsOptions) -> ssl.SSLContext:
 
     # Unconditional floor — applies to both PFX and non-PFX contexts.
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-
-    if opts.ca_path:
-        try:
-            ctx.load_verify_locations(cafile=opts.ca_path)
-        except (FileNotFoundError, OSError) as e:
-            raise ValueError(f"Unable to load CA bundle at '{opts.ca_path}': {e}") from e
 
     if opts.min_version:
         if opts.min_version == "TLSv1.3":
@@ -123,9 +127,7 @@ def _build_from_pfx(opts: MtlsOptions) -> ssl.SSLContext:
     # Chain intermediates if present
     chain_pem = b"".join(c.public_bytes(Encoding.PEM) for c in (additional_certs or []))
 
-    # create_default_context loads system CAs and sets check_hostname=True /
-    # verify_mode=CERT_REQUIRED, matching the behaviour of the non-PFX path.
-    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    ctx = _create_verify_context(opts.ca_path)
     import tempfile, os
 
     # mkstemp gives a raw fd — write and close before ssl reads it, then unlink.

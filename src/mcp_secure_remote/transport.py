@@ -93,6 +93,11 @@ async def connect_to_remote_server(
     raise last_error if last_error is not None else RuntimeError("Unable to establish remote transport")
 
 
+def _default_mcp_timeout() -> Any:
+    """Match MCP SDK long-lived stream defaults when callers pass timeout=None."""
+    return sdk_httpx.Timeout(30.0, read=300.0)
+
+
 def _build_httpx_client_factory(
     ssl_context,
     expected_origin: str,
@@ -109,6 +114,18 @@ def _build_httpx_client_factory(
                 f"Refusing outbound request to an unexpected origin: {req_origin!r}"
             )
 
+    async def _check_response_origin(response: Any) -> None:
+        resp_origin = _get_origin(str(response.url))
+        if resp_origin != expected_origin:
+            debug_log(
+                "blocked redirect to unexpected origin",
+                {"expected": expected_origin, "actual": resp_origin},
+            )
+            await response.aclose()
+            raise ValueError(
+                f"Remote server redirected to an unexpected origin: {resp_origin!r}"
+            )
+
     def factory(
         headers: dict[str, str] | None = None,
         timeout: Any | None = None,
@@ -119,12 +136,14 @@ def _build_httpx_client_factory(
         kwargs: dict[str, Any] = {
             "follow_redirects": False,
             "verify": ssl_context or True,
-            "event_hooks": {"request": [_check_origin]},
+            "event_hooks": {
+                "request": [_check_origin],
+                "response": [_check_response_origin],
+            },
+            "timeout": timeout if timeout is not None else _default_mcp_timeout(),
         }
         if headers is not None:
             kwargs["headers"] = headers
-        if timeout is not None:
-            kwargs["timeout"] = timeout
         if auth is not None:
             kwargs["auth"] = auth
         return sdk_httpx.AsyncClient(**kwargs)

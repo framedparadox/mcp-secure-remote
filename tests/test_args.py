@@ -7,9 +7,9 @@ import pytest
 from mcp_secure_remote.args import (
     VALID_TRANSPORTS,
     ParsedArgs,
-    _validate_http_header,
     parse_args,
 )
+from mcp_secure_remote.http_headers import validate_http_header as _validate_http_header
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +133,10 @@ class TestParseArgsUrl:
         with pytest.raises(ValueError, match="Refusing to use http://"):
             parse_args(["http://example.com"])
 
+    def test_mixed_case_http_without_allow_http_raises(self):
+        with pytest.raises(ValueError, match="Refusing to use http://"):
+            parse_args(["HTTP://example.com"])
+
     def test_http_with_allow_http_succeeds(self):
         result = parse_args(["http://example.com", "--allow-http"])
         assert result.server_url == "http://example.com"
@@ -141,6 +145,33 @@ class TestParseArgsUrl:
     def test_duplicate_positional_raises(self):
         with pytest.raises(ValueError, match="Unexpected positional argument"):
             parse_args(["https://example.com", "https://other.com"])
+
+    def test_private_host_blocked_by_default(self):
+        with pytest.raises(ValueError, match="private or restricted host"):
+            parse_args(["https://127.0.0.1:8443/mcp"])
+
+    def test_private_host_allowed_with_flag(self):
+        result = parse_args(["https://127.0.0.1:8443/mcp", "--allow-private-urls"])
+        assert result.allow_private_urls is True
+
+
+# ---------------------------------------------------------------------------
+# parse_args — application auth
+# ---------------------------------------------------------------------------
+
+
+class TestParseArgsAuth:
+    def test_auth_bearer_header(self):
+        result = parse_args(["https://example.com", "--auth-bearer", "tok"])
+        assert result.headers["Authorization"] == "Bearer tok"
+
+    def test_auth_basic_header(self):
+        result = parse_args(["https://example.com", "--auth-basic", "user:pass"])
+        assert result.headers["Authorization"] == "Basic dXNlcjpwYXNz"
+
+    def test_api_key_header(self):
+        result = parse_args(["https://example.com", "--api-key", "secret"])
+        assert result.headers["X-Api-Key"] == "secret"
 
 
 # ---------------------------------------------------------------------------

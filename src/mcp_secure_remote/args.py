@@ -1,34 +1,17 @@
 """CLI argument parser."""
 import os
-import re
 import sys
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlparse
 
+from .auth_headers import AuthOptions, merge_auth_headers
+from .http_headers import validate_http_header as _validate_http_header
 from .mtls import MtlsOptions
+from .url_security import UrlSecurityOptions, validate_remote_url
 
 TransportStrategy = Literal["http-first", "sse-first", "http-only", "sse-only"]
 VALID_TRANSPORTS: tuple[str, ...] = ("http-first", "sse-first", "http-only", "sse-only")
-
-# RFC 7230 §3.2.6 — a header field-name must be a sequence of "token" chars.
-# Rejecting anything outside this alphabet prevents CRLF-injection attacks
-# even if the underlying HTTP library would catch it later.
-_VALID_HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
-
-
-def _validate_http_header(name: str, value: str) -> None:
-    """Raise ValueError for header names/values that could enable injection."""
-    if not _VALID_HEADER_NAME_RE.match(name):
-        raise ValueError(
-            f'Invalid header name {name!r}: must be a valid RFC 7230 HTTP token '
-            r"(alphanumerics and !#$%&'*+-.^_`|~)"
-        )
-    # Bare CR, LF, or NUL in a header value enable CRLF-injection attacks.
-    if re.search(r"[\r\n\x00]", value):
-        raise ValueError(
-            f"Header value for {name!r} must not contain CR, LF, or NUL characters"
-        )
 
 
 @dataclass
@@ -38,7 +21,9 @@ class ParsedArgs:
     transport_strategy: TransportStrategy
     debug: bool
     allow_http: bool
+    allow_private_urls: bool
     mtls: MtlsOptions
+    auth: AuthOptions
 
 
 def _env(name: str) -> str | None:
@@ -56,6 +41,14 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
     transport_strategy: TransportStrategy = "http-first"
     debug = False
     allow_http = False
+    allow_private_urls = False
+
+    auth = AuthOptions(
+        bearer=_env("MCP_REMOTE_AUTH_BEARER"),
+        basic=_env("MCP_REMOTE_AUTH_BASIC"),
+        api_key=_env("MCP_REMOTE_API_KEY"),
+        api_key_header=_env("MCP_REMOTE_API_KEY_HEADER"),
+    )
 
     env_min_version = _env("MCP_REMOTE_TLS_MIN_VERSION")
     if env_min_version and env_min_version not in ("TLSv1.2", "TLSv1.3"):
@@ -109,6 +102,18 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
         elif arg == "--allow-http":
             allow_http = True
 
+        elif arg == "--allow-private-urls":
+            allow_private_urls = True
+
+        elif arg == "--auth-bearer":
+            auth.bearer = take("--auth-bearer")
+        elif arg == "--auth-basic":
+            auth.basic = take("--auth-basic")
+        elif arg == "--api-key":
+            auth.api_key = take("--api-key")
+        elif arg == "--api-key-header":
+            auth.api_key_header = take("--api-key-header")
+
         elif arg == "--tls-cert":
             mtls.cert_path = take("--tls-cert")
         elif arg == "--tls-key":
@@ -157,10 +162,10 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
             "use --header or environment configuration instead."
         )
 
-    if server_url.startswith("http://") and not allow_http:
+    if parsed_url.scheme == "http" and not allow_http:
         raise ValueError("Refusing to use http:// without --allow-http; mTLS requires https://.")
 
-    if server_url.startswith("http://") and _has_any_mtls_flag(mtls):
+    if parsed_url.scheme == "http" and _has_any_mtls_flag(mtls):
         sys.stderr.write(
             "WARNING: mTLS options supplied with http:// URL; "
             "client certificate will NOT be sent over plain HTTP.\n"
@@ -174,13 +179,19 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
         )
         sys.stderr.flush()
 
+    validate_remote_url(server_url, UrlSecurityOptions(allow_private_urls=allow_private_urls))
+
+    merged_headers = merge_auth_headers(headers, auth)
+
     return ParsedArgs(
         server_url=server_url,
-        headers=headers,
+        headers=merged_headers,
         transport_strategy=transport_strategy,
         debug=debug,
         allow_http=allow_http,
+        allow_private_urls=allow_private_urls,
         mtls=mtls,
+        auth=auth,
     )
 
 
@@ -199,7 +210,14 @@ def print_usage() -> None:
         '  --header "Name: value"      Add a custom HTTP header (repeatable).',
         "  --transport <strategy>      http-first | sse-first | http-only | sse-only (default: http-first).",
         "  --allow-http                Allow plain http:// URLs (disables the default https-only check).",
+        "  --allow-private-urls        Allow localhost and private-network targets (local dev / mTLS lab).",
         "  --debug                     Verbose logging to stderr.",
+        "",
+        "Application auth (supplement mTLS; sent as HTTP headers):",
+        "  --auth-bearer <token>       Set Authorization: Bearer <token>.",
+        "  --auth-basic <user:pass>    Set Authorization: Basic (base64).",
+        "  --api-key <key>             Set an API key header (default name: X-Api-Key).",
+        "  --api-key-header <name>     Override the API key header name.",
         "",
         "mTLS options:",
         "  --tls-cert <path>           PEM client certificate (or chain).",
@@ -216,6 +234,7 @@ def print_usage() -> None:
         "  MCP_REMOTE_TLS_CERT, MCP_REMOTE_TLS_KEY, MCP_REMOTE_TLS_CA,",
         "  MCP_REMOTE_TLS_PASSPHRASE, MCP_REMOTE_TLS_PFX, MCP_REMOTE_TLS_SERVERNAME,",
         "  MCP_REMOTE_TLS_MIN_VERSION, MCP_REMOTE_TLS_INSECURE (=1 to skip server cert verify)",
+        "  MCP_REMOTE_AUTH_BEARER, MCP_REMOTE_AUTH_BASIC, MCP_REMOTE_API_KEY, MCP_REMOTE_API_KEY_HEADER",
     ]
     sys.stderr.write("\n".join(lines) + "\n")
     sys.stderr.flush()

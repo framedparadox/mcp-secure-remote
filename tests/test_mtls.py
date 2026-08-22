@@ -135,18 +135,22 @@ class TestBuildSslContextWithMockedContext:
                 assert "False" not in str(call)
 
     @patch("ssl.create_default_context")
-    def test_ca_path_file_not_found_raises(self, mock_factory):
+    def test_ca_path_uses_cafile_instead_of_load_verify_locations(self, mock_factory):
         ctx = self._mock_ctx()
-        ctx.load_verify_locations.side_effect = FileNotFoundError("no such file")
         mock_factory.return_value = ctx
+        build_ssl_context(MtlsOptions(ca_path="/ca.pem"))
+        mock_factory.assert_called_once_with(ssl.Purpose.SERVER_AUTH, cafile="/ca.pem")
+        ctx.load_verify_locations.assert_not_called()
+
+    @patch("ssl.create_default_context")
+    def test_ca_path_file_not_found_raises(self, mock_factory):
+        mock_factory.side_effect = FileNotFoundError("no such file")
         with pytest.raises(ValueError, match="Unable to load CA bundle"):
             build_ssl_context(MtlsOptions(ca_path="/nonexistent/ca.pem"))
 
     @patch("ssl.create_default_context")
     def test_ca_path_os_error_raises(self, mock_factory):
-        ctx = self._mock_ctx()
-        ctx.load_verify_locations.side_effect = OSError("permission denied")
-        mock_factory.return_value = ctx
+        mock_factory.side_effect = OSError("permission denied")
         with pytest.raises(ValueError, match="Unable to load CA bundle"):
             build_ssl_context(MtlsOptions(ca_path="/unreadable/ca.pem"))
 

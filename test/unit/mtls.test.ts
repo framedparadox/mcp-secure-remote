@@ -137,6 +137,7 @@ describe('buildSecureContextOptions – success', () => {
   it('returns rejectUnauthorized=true by default', () => {
     const tls = buildSecureContextOptions({})
     expect(tls.rejectUnauthorized).toBe(true)
+    expect(tls.minVersion).toBe('TLSv1.2')
   })
 
   it('returns rejectUnauthorized=false when explicitly set', () => {

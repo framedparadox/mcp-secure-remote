@@ -62,6 +62,7 @@ export function buildSecureContextOptions(opts: MtlsOptions): SecureContextOptio
 } {
   const tls: SecureContextOptions & { rejectUnauthorized: boolean; servername?: string } = {
     rejectUnauthorized: opts.rejectUnauthorized !== false,
+    minVersion: opts.minVersion ?? 'TLSv1.2',
   }
 
   if (opts.pfxPath) {

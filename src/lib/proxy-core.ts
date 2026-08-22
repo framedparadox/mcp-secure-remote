@@ -18,6 +18,10 @@ export function mcpProxy({ transportToClient, transportToServer }: McpProxyOptio
   let serverClosed = false
 
   transportToClient.onmessage = (message) => {
+    if (message instanceof Error) {
+      debugLog('client -> server (dropped parse error)', String(message))
+      return
+    }
     debugLog('client -> server', summarizeMessage(message))
     transportToServer.send(message).catch((err) => {
       log('Error forwarding client message to server:', err)
@@ -25,6 +29,10 @@ export function mcpProxy({ transportToClient, transportToServer }: McpProxyOptio
   }
 
   transportToServer.onmessage = (message) => {
+    if (message instanceof Error) {
+      debugLog('server -> client (dropped parse error)', String(message))
+      return
+    }
     debugLog('server -> client', summarizeMessage(message))
     transportToClient.send(message).catch((err) => {
       log('Error forwarding server message to client:', err)

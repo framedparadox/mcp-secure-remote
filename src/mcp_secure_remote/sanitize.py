@@ -61,7 +61,14 @@ def sanitize_parsed_args_for_log(parsed: object) -> dict:
         "server_url": sanitize_server_url_for_log(parsed.server_url),  # type: ignore[attr-defined]
         "transport_strategy": parsed.transport_strategy,  # type: ignore[attr-defined]
         "allow_http": parsed.allow_http,  # type: ignore[attr-defined]
+        "allow_private_urls": parsed.allow_private_urls,  # type: ignore[attr-defined]
         "headers": list(parsed.headers.keys()),  # names only, never values  # type: ignore[attr-defined]
+        "auth": {
+            "bearer": "***" if parsed.auth.bearer else None,  # type: ignore[attr-defined]
+            "basic": "***" if parsed.auth.basic else None,  # type: ignore[attr-defined]
+            "api_key": "***" if parsed.auth.api_key else None,  # type: ignore[attr-defined]
+            "api_key_header": parsed.auth.api_key_header,  # type: ignore[attr-defined]
+        },
         "mtls": {
             "cert_path": mtls.cert_path,
             "key_path": mtls.key_path,

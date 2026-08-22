@@ -1,3 +1,4 @@
+import type { AuthOptions } from './auth-headers.js'
 import type { MtlsOptions } from './mtls.js'
 import { sanitizeServerUrlForLog } from './args.js'
 
@@ -5,15 +6,28 @@ export function sanitizeParsedArgsForLog(parsed: {
   serverUrl: string
   transportStrategy: string
   allowHttp: boolean
+  allowPrivateUrls: boolean
   headers: Record<string, string>
   mtls: MtlsOptions
+  auth: AuthOptions
 }): Record<string, unknown> {
   return {
     serverUrl: sanitizeServerUrlForLog(parsed.serverUrl),
     transportStrategy: parsed.transportStrategy,
     allowHttp: parsed.allowHttp,
+    allowPrivateUrls: parsed.allowPrivateUrls,
     headers: Object.keys(parsed.headers),
+    auth: sanitizeAuthForLog(parsed.auth),
     mtls: sanitizeMtlsForLog(parsed.mtls),
+  }
+}
+
+export function sanitizeAuthForLog(auth: AuthOptions): Record<string, unknown> {
+  return {
+    bearer: auth.bearer ? '***' : undefined,
+    basic: auth.basic ? '***' : undefined,
+    apiKey: auth.apiKey ? '***' : undefined,
+    apiKeyHeader: auth.apiKeyHeader,
   }
 }
 

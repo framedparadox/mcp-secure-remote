@@ -308,12 +308,14 @@ set `--tls-servername localhost`.
 
 ```bash
 npx mcp-secure-remote-client https://127.0.0.1:8443/mcp \
+  --allow-private-urls \
   --tls-cert certs/dev/client.crt \
   --tls-key  certs/dev/client.key \
   --tls-ca   certs/dev/ca.crt \
   --tls-servername localhost
 
 uvx mcp-secure-remote-client https://127.0.0.1:8443/mcp \
+  --allow-private-urls \
   --tls-cert certs/dev/client.crt \
   --tls-key  certs/dev/client.key \
   --tls-ca   certs/dev/ca.crt \
@@ -468,10 +470,35 @@ history, and agent config files.
 | `MCP_REMOTE_TLS_SERVERNAME` | `--tls-servername` | string |
 | `MCP_REMOTE_TLS_MIN_VERSION` | `--tls-min-version` | `TLSv1.2` or `TLSv1.3` (invalid values fail parse) |
 | `MCP_REMOTE_TLS_INSECURE` | `--tls-insecure-skip-verify` | `1` / `true` / `yes` (case-insensitive) disables verify |
+| `MCP_REMOTE_AUTH_BEARER` | `--auth-bearer` | Bearer token (sent as `Authorization: Bearer …`) |
+| `MCP_REMOTE_AUTH_BASIC` | `--auth-basic` | `username:password` (sent as HTTP Basic) |
+| `MCP_REMOTE_API_KEY` | `--api-key` | API key value |
+| `MCP_REMOTE_API_KEY_HEADER` | `--api-key-header` | Header name (default `X-Api-Key`) |
 
-**Precedence:** an explicit CLI flag always wins over the env var.
+**Precedence:** an explicit CLI flag always wins over the env var. For headers,
+`--header` overrides auth env vars when both target the same header name.
 
 Empty env values are treated as unset.
+
+### Application-layer auth (beyond mTLS)
+
+Many remotes combine **mTLS at the TLS layer** with **Bearer tokens, HTTP Basic,
+or API keys** at the HTTP layer. Use the auth flags/env vars above instead of
+embedding secrets in the server URL (which is refused). These supplement — not
+replace — client certificate authentication.
+
+| Strategy | Flag / env | When to use |
+| --- | --- | --- |
+| **mTLS (client cert)** | `--tls-cert` / `--tls-key` / `--tls-pfx` | Primary auth; cert presented on TLS handshake |
+| **Bearer token** | `--auth-bearer` / `MCP_REMOTE_AUTH_BEARER` | OAuth-style access tokens, JWT bearer |
+| **HTTP Basic** | `--auth-basic` / `MCP_REMOTE_AUTH_BASIC` | Legacy basic-auth gateways |
+| **API key header** | `--api-key` / `MCP_REMOTE_API_KEY` | Shared secret in a custom or standard header |
+| **Custom headers** | `--header "Name: value"` | Any other application auth (tenant IDs, HMAC headers, etc.) |
+
+**Not built in:** OAuth authorization-code flows, automatic token refresh, JWT
+validation, request signing (AWS SigV4), or certificate/public-key pinning.
+Use your identity provider to mint tokens, then pass them via `--auth-bearer` or
+`--header`.
 
 ---
 
@@ -827,12 +854,20 @@ For a local server that actually requires a client cert, use the
 
 ## Security notes
 
-- **HTTPS only by default.** `http://` is refused unless `--allow-http`
-  is set. Combining mTLS flags with `http://` warns: the client cert is
-  not sent over plain HTTP.
+- **HTTPS only by default.** `http://` (any casing) is refused unless
+  `--allow-http` is set. Combining mTLS flags with `http://` warns: the
+  client cert is not sent over plain HTTP.
+- **Private hosts blocked by default.** Loopback, RFC1918, link-local, and
+  cloud-metadata IPs are refused unless `--allow-private-urls` is set.
+  Use that flag for the [local mTLS lab](#local-mtls-lab); production agents
+  should omit it to reduce SSRF risk from agent configs.
+- **CA pinning is exclusive.** When `--tls-ca` is set, server verification
+  trusts **only** that PEM bundle — not the OS public CA store (Node and
+  Python behave the same).
 - **Redirects are rejected.** Outbound requests set `redirect: error`
-  (Node) / `follow_redirects=False` (Python). A remote cannot bounce the
-  client to another host and reuse the TLS credentials.
+  (Node) / `follow_redirects=False` (Python). Responses whose final URL
+  leaves the pinned origin are also refused (Python response hook; Node
+  post-fetch check).
 - **Origin pinning.** Every outbound request is checked against the
   origin of `<server-url>` (scheme + host + port). A different origin is
   refused.
@@ -842,13 +877,15 @@ For a local server that actually requires a client cert, use the
   local loops only.
 - **Header injection is rejected.** Header names must be RFC 7230 tokens.
   Values cannot contain CR, LF, or NUL.
-- **Prefer env vars for passphrases.** CLI values leak into process
-  listings, shell history, and some agent logs.
-- **Debug logging redacts secrets.** Passphrases and header **values**
-  are not printed. Message traces log kind / id / method only — not tool
-  arguments or results.
+- **Prefer env vars for passphrases and auth secrets.** CLI values leak
+  into process listings, shell history, and some agent logs.
+- **Debug logging redacts secrets.** Passphrases, bearer tokens, basic
+  auth, API keys, and header **values** are not printed. Message traces log
+  kind / id / method only — not tool arguments or results.
 - **Embedded URL credentials are refused.** Userinfo can leak through
-  `ps` and logs.
+  `ps` and logs; use auth env vars or `--header` instead.
+- **Malformed JSON-RPC is dropped.** Parse errors from stdio or the remote
+  transport are logged and discarded instead of crashing the proxy.
 - **Proxy logs to stderr.** stdout is reserved for MCP JSON-RPC.
 - **Client output is terminal-sanitized.** Tool names, descriptions,
   resources, and prompts have ANSI / control characters stripped before
@@ -856,8 +893,8 @@ For a local server that actually requires a client cert, use the
 - **No credential persistence.** The proxy does not write certs, keys, or
   tokens to disk (Python PFX handling uses short-lived temp files that
   are zero-filled and unlinked).
-- **TLS 1.2 floor.** Even without `--tls-min-version`, Python sets
-  `minimum_version = TLSv1_2`. Pin `TLSv1.3` when the server allows it.
+- **TLS 1.2 floor.** Both runtimes enforce TLS 1.2+ even without
+  `--tls-min-version`. Pin `TLSv1.3` when the server allows it.
 
 ---
 

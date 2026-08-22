@@ -347,6 +347,33 @@ describe('parseCommandLineArgs – misc', () => {
 })
 
 // ---------------------------------------------------------------------------
+// parseCommandLineArgs – security hardening
+// ---------------------------------------------------------------------------
+describe('parseCommandLineArgs – security hardening', () => {
+  it('rejects mixed-case HTTP without --allow-http', () => {
+    expect(() => parseCommandLineArgs(['HTTP://example.com/mcp'])).toThrow(
+      'Refusing to use http:// without --allow-http',
+    )
+  })
+
+  it('blocks private hosts by default', () => {
+    expect(() => parseCommandLineArgs(['https://127.0.0.1:8443/mcp'])).toThrow(
+      'private or restricted host',
+    )
+  })
+
+  it('allows private hosts with --allow-private-urls', () => {
+    const parsed = parseCommandLineArgs(['https://127.0.0.1:8443/mcp', '--allow-private-urls'])
+    expect(parsed.allowPrivateUrls).toBe(true)
+  })
+
+  it('adds bearer auth header from flag', () => {
+    const parsed = parseCommandLineArgs(['https://example.com', '--auth-bearer', 'tok'])
+    expect(parsed.headers.Authorization).toBe('Bearer tok')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // sanitizeServerUrlForLog
 // ---------------------------------------------------------------------------
 describe('sanitizeServerUrlForLog', () => {

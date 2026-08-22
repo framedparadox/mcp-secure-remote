@@ -53,7 +53,7 @@ describe('sanitizeTerminalText', () => {
   })
 
   it('escapes ZWJ (U+200D)', () => {
-    const result = sanitizeTerminalText('‍')
+    const result = sanitizeTerminalText(String.fromCharCode(0x200d))
     expect(result).toContain('\\u200d')
   })
 
@@ -63,7 +63,7 @@ describe('sanitizeTerminalText', () => {
   })
 
   it('escapes RTL mark (U+200F)', () => {
-    const result = sanitizeTerminalText('‏')
+    const result = sanitizeTerminalText(String.fromCharCode(0x200f))
     expect(result).toContain('\\u200f')
   })
 
@@ -92,7 +92,7 @@ describe('sanitizeTerminalText', () => {
   })
 
   it('escapes word joiner (U+2060)', () => {
-    const result = sanitizeTerminalText('⁠')
+    const result = sanitizeTerminalText(String.fromCharCode(0x2060))
     expect(result).toContain('\\u2060')
   })
 
@@ -210,8 +210,10 @@ describe('sanitizeParsedArgsForLog', () => {
       serverUrl: 'https://user:pass@example.com/mcp',
       transportStrategy: 'http-first',
       allowHttp: false,
+      allowPrivateUrls: false,
       headers: {},
       mtls: {},
+      auth: {},
     })
     expect(result.serverUrl).toBe('https://example.com/mcp')
   })
@@ -221,8 +223,10 @@ describe('sanitizeParsedArgsForLog', () => {
       serverUrl: 'https://example.com',
       transportStrategy: 'http-first',
       allowHttp: false,
+      allowPrivateUrls: false,
       headers: { Authorization: 'Bearer secret', 'X-Token': 'abc' },
       mtls: {},
+      auth: {},
     })
     expect(result.headers).toEqual(['Authorization', 'X-Token'])
   })
@@ -232,8 +236,10 @@ describe('sanitizeParsedArgsForLog', () => {
       serverUrl: 'https://example.com',
       transportStrategy: 'http-first',
       allowHttp: false,
+      allowPrivateUrls: false,
       headers: {},
       mtls: { passphrase: 'super-secret' },
+      auth: {},
     })
     expect((result.mtls as { passphrase: string }).passphrase).toBe('***')
   })
@@ -243,8 +249,10 @@ describe('sanitizeParsedArgsForLog', () => {
       serverUrl: 'https://example.com',
       transportStrategy: 'sse-only',
       allowHttp: false,
+      allowPrivateUrls: false,
       headers: {},
       mtls: {},
+      auth: {},
     })
     expect(result.transportStrategy).toBe('sse-only')
   })
@@ -254,8 +262,10 @@ describe('sanitizeParsedArgsForLog', () => {
       serverUrl: 'https://example.com',
       transportStrategy: 'http-first',
       allowHttp: true,
+      allowPrivateUrls: false,
       headers: {},
       mtls: {},
+      auth: {},
     })
     expect(result.allowHttp).toBe(true)
   })
@@ -265,8 +275,10 @@ describe('sanitizeParsedArgsForLog', () => {
       serverUrl: 'https://example.com',
       transportStrategy: 'http-first',
       allowHttp: false,
+      allowPrivateUrls: false,
       headers: {},
       mtls: {},
+      auth: {},
     })
     expect(result.headers).toEqual([])
   })

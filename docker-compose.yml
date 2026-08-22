@@ -9,7 +9,7 @@ services:
     environment:
       MCP_REMOTE_TLS_CERT: ${MCP_REMOTE_TLS_CERT:-/certs/client.crt}
       MCP_REMOTE_TLS_KEY: ${MCP_REMOTE_TLS_KEY:-/certs/client.key}
-      MCP_REMOTE_TLS_CA: ${MCP_REMOTE_TLS_CA:-/certs/ca-bundle.pem}
+      MCP_REMOTE_TLS_CA: ${MCP_REMOTE_TLS_CA:-/certs/ca.crt}
       MCP_REMOTE_TLS_PFX: ${MCP_REMOTE_TLS_PFX:-}
       MCP_REMOTE_TLS_PASSPHRASE: ${MCP_REMOTE_TLS_PASSPHRASE:-}
       MCP_REMOTE_TLS_SERVERNAME: ${MCP_REMOTE_TLS_SERVERNAME:-}
@@ -30,7 +30,7 @@ services:
     environment:
       MCP_REMOTE_TLS_CERT: ${MCP_REMOTE_TLS_CERT:-/certs/client.crt}
       MCP_REMOTE_TLS_KEY: ${MCP_REMOTE_TLS_KEY:-/certs/client.key}
-      MCP_REMOTE_TLS_CA: ${MCP_REMOTE_TLS_CA:-/certs/ca-bundle.pem}
+      MCP_REMOTE_TLS_CA: ${MCP_REMOTE_TLS_CA:-/certs/ca.crt}
       MCP_REMOTE_TLS_PFX: ${MCP_REMOTE_TLS_PFX:-}
       MCP_REMOTE_TLS_PASSPHRASE: ${MCP_REMOTE_TLS_PASSPHRASE:-}
       MCP_REMOTE_TLS_SERVERNAME: ${MCP_REMOTE_TLS_SERVERNAME:-}

@@ -66,6 +66,26 @@ describe('mcpProxy – message forwarding', () => {
     expect(server.sentMessages).toHaveLength(5)
   })
 
+  it('drops client parse errors instead of forwarding them', async () => {
+    const client = makeTransport()
+    const server = makeTransport()
+    mcpProxy({ transportToClient: client, transportToServer: server })
+
+    client.onmessage!(new Error('malformed JSON'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(server.sentMessages).toHaveLength(0)
+  })
+
+  it('drops server parse errors instead of forwarding them', async () => {
+    const client = makeTransport()
+    const server = makeTransport()
+    mcpProxy({ transportToClient: client, transportToServer: server })
+
+    server.onmessage!(new Error('malformed JSON'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(client.sentMessages).toHaveLength(0)
+  })
+
   it('logs error but does not throw when server.send fails', async () => {
     const client = makeTransport()
     const server = makeTransport()

@@ -1,4 +1,6 @@
 import type { MtlsOptions } from './mtls.js'
+import { mergeAuthHeaders, type AuthOptions } from './auth-headers.js'
+import { validateRemoteUrl } from './url-security.js'
 
 export type TransportStrategy = 'http-first' | 'sse-first' | 'http-only' | 'sse-only'
 
@@ -8,7 +10,9 @@ export interface ParsedArgs {
   transportStrategy: TransportStrategy
   debug: boolean
   allowHttp: boolean
+  allowPrivateUrls: boolean
   mtls: MtlsOptions
+  auth: AuthOptions
 }
 
 const VALID_TRANSPORTS: TransportStrategy[] = ['http-first', 'sse-first', 'http-only', 'sse-only']
@@ -21,7 +25,7 @@ const VALID_TRANSPORTS: TransportStrategy[] = ['http-first', 'sse-first', 'http-
  */
 const VALID_HEADER_NAME_RE = /^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$/
 
-function validateHttpHeader(name: string, value: string): void {
+export function validateHttpHeader(name: string, value: string): void {
   if (!VALID_HEADER_NAME_RE.test(name)) {
     throw new Error(
       `Invalid header name "${name}": must be a valid RFC 7230 HTTP token (alphanumerics and !#$%&'*+-.^_\`|~)`,
@@ -53,6 +57,14 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
   let transportStrategy: TransportStrategy = 'http-first'
   let debug = false
   let allowHttp = false
+  let allowPrivateUrls = false
+
+  const auth: AuthOptions = {
+    bearer: envOrUndefined('MCP_REMOTE_AUTH_BEARER'),
+    basic: envOrUndefined('MCP_REMOTE_AUTH_BASIC'),
+    apiKey: envOrUndefined('MCP_REMOTE_API_KEY'),
+    apiKeyHeader: envOrUndefined('MCP_REMOTE_API_KEY_HEADER'),
+  }
 
   const envMinVersion = envOrUndefined('MCP_REMOTE_TLS_MIN_VERSION')
   if (envMinVersion && envMinVersion !== 'TLSv1.2' && envMinVersion !== 'TLSv1.3') {
@@ -105,6 +117,22 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
         break
       case '--allow-http':
         allowHttp = true
+        break
+      case '--allow-private-urls':
+        allowPrivateUrls = true
+        break
+
+      case '--auth-bearer':
+        auth.bearer = take('--auth-bearer')
+        break
+      case '--auth-basic':
+        auth.basic = take('--auth-basic')
+        break
+      case '--api-key':
+        auth.apiKey = take('--api-key')
+        break
+      case '--api-key-header':
+        auth.apiKeyHeader = take('--api-key-header')
         break
 
       // mTLS flags
@@ -187,7 +215,25 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
     )
   }
 
-  return { serverUrl, headers, transportStrategy, debug, allowHttp, mtls }
+  validateRemoteUrl(parsed, { allowPrivateUrls })
+
+  let mergedHeaders: Record<string, string>
+  try {
+    mergedHeaders = mergeAuthHeaders(headers, auth)
+  } catch (err) {
+    throw err instanceof Error ? err : new Error(String(err))
+  }
+
+  return {
+    serverUrl,
+    headers: mergedHeaders,
+    transportStrategy,
+    debug,
+    allowHttp,
+    allowPrivateUrls,
+    mtls,
+    auth,
+  }
 }
 
 export function sanitizeServerUrlForLog(serverUrl: string): string {
@@ -216,7 +262,14 @@ export function printUsage(): void {
     '  --header "Name: value"      Add a custom HTTP header (repeatable).',
     '  --transport <strategy>      http-first | sse-first | http-only | sse-only (default: http-first).',
     '  --allow-http                Allow plain http:// URLs (disables the default https-only check).',
+    '  --allow-private-urls        Allow localhost and private-network targets (local dev / mTLS lab).',
     '  --debug                     Verbose logging to stderr.',
+    '',
+    'Application auth (supplement mTLS; sent as HTTP headers):',
+    '  --auth-bearer <token>       Set Authorization: Bearer <token>.',
+    '  --auth-basic <user:pass>    Set Authorization: Basic (base64).',
+    '  --api-key <key>             Set an API key header (default name: X-Api-Key).',
+    '  --api-key-header <name>     Override the API key header name.',
     '',
     'mTLS options:',
     '  --tls-cert <path>           PEM client certificate (or chain).',
@@ -232,6 +285,7 @@ export function printUsage(): void {
     '  MCP_REMOTE_TLS_CERT, MCP_REMOTE_TLS_KEY, MCP_REMOTE_TLS_CA,',
     '  MCP_REMOTE_TLS_PASSPHRASE, MCP_REMOTE_TLS_PFX, MCP_REMOTE_TLS_SERVERNAME,',
     '  MCP_REMOTE_TLS_MIN_VERSION, MCP_REMOTE_TLS_INSECURE (=1 to skip server cert verify)',
+    '  MCP_REMOTE_AUTH_BEARER, MCP_REMOTE_AUTH_BASIC, MCP_REMOTE_API_KEY, MCP_REMOTE_API_KEY_HEADER',
   ]
   process.stderr.write(lines.join('\n') + '\n')
 }
