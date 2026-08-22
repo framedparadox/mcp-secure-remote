@@ -8,6 +8,7 @@ import { parseCommandLineArgs, printUsage } from './lib/args.js'
 import { debugLog, log, setDebug } from './lib/log.js'
 import { connectToRemoteServer } from './lib/transport.js'
 import { sanitizeParsedArgsForLog, sanitizeTerminalText } from './lib/sanitize.js'
+import { VERSION } from './lib/version.js'
 
 async function main(): Promise<void> {
   let parsed
@@ -31,7 +32,7 @@ async function main(): Promise<void> {
   })
 
   const client = new Client(
-    { name: 'mcp-secure-remote-client', version: '0.1.0' },
+    { name: 'mcp-secure-remote-client', version: VERSION },
     { capabilities: {} },
   )
 

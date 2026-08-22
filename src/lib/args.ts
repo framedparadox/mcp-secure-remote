@@ -2,6 +2,7 @@ import type { MtlsOptions } from './mtls.js'
 import { mergeAuthHeaders, type AuthOptions } from './auth-headers.js'
 import { validateRemoteUrl } from './url-security.js'
 import { DEFAULT_MAX_MESSAGE_BYTES, parseMaxMessageBytes } from './message-size.js'
+import { PACKAGE_NAME, VERSION } from './version.js'
 
 export type TransportStrategy = 'http-first' | 'sse-first' | 'http-only' | 'sse-only'
 
@@ -192,6 +193,11 @@ export function parseCommandLineArgs(argv: string[]): ParsedArgs {
         printUsage()
         process.exit(0)
         break
+      case '-V':
+      case '--version':
+        process.stdout.write(`${PACKAGE_NAME} ${VERSION}\n`)
+        process.exit(0)
+        break
 
       default:
         if (arg.startsWith('--')) {
@@ -312,6 +318,9 @@ export function printUsage(): void {
     '  --tls-min-version <ver>     TLSv1.2 or TLSv1.3.',
     '  --tls-pin-sha256 <pin>      SHA-256 SPKI pin for server cert (repeatable; base64, hex, or sha256/…).',
     '  --tls-insecure-skip-verify  Disable server certificate validation (NOT for production).',
+    '',
+    '  -h, --help                  Print usage and exit.',
+    '  -V, --version               Print version and exit.',
     '',
     'Environment variables (fallbacks for flags):',
     '  MCP_REMOTE_TLS_CERT, MCP_REMOTE_TLS_KEY, MCP_REMOTE_TLS_CA,',

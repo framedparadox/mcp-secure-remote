@@ -399,3 +399,31 @@ describe('sanitizeServerUrlForLog', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// parseCommandLineArgs – --version / --help
+// ---------------------------------------------------------------------------
+describe('parseCommandLineArgs – --version', () => {
+  it('prints the package version and exits 0', async () => {
+    const { VERSION } = await import('../../src/lib/version.js')
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`)
+    }) as never)
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+
+    expect(() => parseCommandLineArgs(['--version'])).toThrow('exit:0')
+    expect(stdout).toHaveBeenCalledWith(`mcp-secure-remote ${VERSION}\n`)
+    expect(exit).toHaveBeenCalledWith(0)
+  })
+
+  it('accepts -V as an alias', async () => {
+    const { VERSION } = await import('../../src/lib/version.js')
+    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`)
+    }) as never)
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+
+    expect(() => parseCommandLineArgs(['-V'])).toThrow('exit:0')
+    expect(stdout).toHaveBeenCalledWith(`mcp-secure-remote ${VERSION}\n`)
+  })
+})

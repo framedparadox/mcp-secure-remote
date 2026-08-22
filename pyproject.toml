@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools>=70", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-secure-remote"
-version = "0.0.5"
+version = "0.0.3"
 description = "Remote proxy for Model Context Protocol servers with mTLS (mutual TLS) client certificate authentication support."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "framedparadox" }]
 keywords = [
   "mcp",
@@ -17,6 +18,21 @@ keywords = [
   "proxy",
   "remote",
   "stdio",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Internet",
+  "Topic :: Security :: Cryptography",
+  "Topic :: System :: Networking",
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -44,7 +60,9 @@ dev = [
 
 [tool.setuptools]
 include-package-data = false
-license-files = ["LICENSE"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.ts", "*.tsx", "*.js", "*.js.map", "*.d.ts"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
