@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="mcp-secure-remote logo" width="160" />
+</p>
+
 # mcp-secure-remote
 
 A stdio ↔ remote bridge for the [Model Context Protocol](https://modelcontextprotocol.io)
@@ -15,14 +19,6 @@ Both packages accept the same flags, environment variables, and positional
 
 Works with Claude Desktop, Claude Code, Cursor, Windsurf, Cline, Continue,
 Zed, VS Code MCP extensions, and any custom client that speaks MCP stdio.
-
-<p align="center">
-  <img src="docs/images/architecture_overview.png" alt="Architecture: MCP client talks stdio JSON-RPC to mcp-secure-remote, which forwards HTTPS plus a client certificate to the remote MCP server" width="920" />
-</p>
-
-<p align="center">
-  <img src="docs/images/dual_package.png" alt="One git repo with package.json and pyproject.toml publishes to npm (npx) and PyPI (uvx)" width="920" />
-</p>
 
 ---
 
@@ -99,10 +95,6 @@ Two binaries ship in both packages:
 ---
 
 ## How it works
-
-<p align="center">
-  <img src="docs/images/mtls_handshake.png" alt="mTLS handshake: ClientHello plus SNI, server certificate, client certificate, then encrypted MCP JSON-RPC" width="920" />
-</p>
 
 1. The agent launches `mcp-secure-remote` (via `npx` or `uvx`) as a local
    subprocess and talks to it over **stdio**.
@@ -1047,7 +1039,7 @@ Both mount `${CERTS_DIR:-./certs/dev}` at `/certs:ro` and default the
 ├── test/unit/                # Vitest
 ├── tests/                    # pytest
 ├── scripts/                  # local CA + mock mTLS server
-├── docs/images/              # README diagrams
+├── docs/logo.png             # project logo
 ├── Dockerfile                # multi-target npm | python
 └── .github/workflows/        # ci, publish-npm, publish-py
 ```
@@ -1142,7 +1134,7 @@ before tagging.
 | [`tests/`](tests/) | pytest |
 | [`scripts/generate_dev_mtls_certs.sh`](scripts/generate_dev_mtls_certs.sh) | Dev CA + server + client + P12 |
 | [`scripts/mock_mtls_mcp_server.py`](scripts/mock_mtls_mcp_server.py) | Local HTTPS MCP that requires a client cert |
-| [`docs/images/`](docs/images/) | Architecture diagrams used above |
+| [`docs/logo.png`](docs/logo.png) | Project logo |
 | [`Dockerfile`](Dockerfile) | `npm-builder` → `python` → `npm` (default) |
 | [`docker-compose.yml`](docker-compose.yml) | Node service + optional `python` profile |
 | [`MANIFEST.in`](MANIFEST.in) | PyPI sdist inclusions / exclusions |
