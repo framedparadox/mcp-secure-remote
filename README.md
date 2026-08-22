@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/logo.png" alt="mcp-secure-remote logo" width="160" />
-</p>
-
 # mcp-secure-remote
 
 A stdio ↔ remote bridge for the [Model Context Protocol](https://modelcontextprotocol.io)
@@ -1039,7 +1035,6 @@ Both mount `${CERTS_DIR:-./certs/dev}` at `/certs:ro` and default the
 ├── test/unit/                # Vitest
 ├── tests/                    # pytest
 ├── scripts/                  # local CA + mock mTLS server
-├── docs/logo.png             # project logo
 ├── Dockerfile                # multi-target npm | python
 └── .github/workflows/        # ci, publish-npm, publish-py
 ```
@@ -1134,7 +1129,6 @@ before tagging.
 | [`tests/`](tests/) | pytest |
 | [`scripts/generate_dev_mtls_certs.sh`](scripts/generate_dev_mtls_certs.sh) | Dev CA + server + client + P12 |
 | [`scripts/mock_mtls_mcp_server.py`](scripts/mock_mtls_mcp_server.py) | Local HTTPS MCP that requires a client cert |
-| [`docs/logo.png`](docs/logo.png) | Project logo |
 | [`Dockerfile`](Dockerfile) | `npm-builder` → `python` → `npm` (default) |
 | [`docker-compose.yml`](docker-compose.yml) | Node service + optional `python` profile |
 | [`MANIFEST.in`](MANIFEST.in) | PyPI sdist inclusions / exclusions |
