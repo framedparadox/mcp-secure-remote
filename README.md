@@ -3,17 +3,26 @@
 A stdio ↔ remote bridge for the [Model Context Protocol](https://modelcontextprotocol.io)
 with first-class **mTLS (mutual TLS) client-certificate authentication**.
 
-The same project ships two runtimes:
+One repository. Two runtimes. Same CLI.
 
-- **Node** — `npx mcp-secure-remote …` (published to npm)
-- **Python** — `uvx mcp-secure-remote …` (published to PyPI)
+| Runtime | Install / run | Registry | Bins |
+| --- | --- | --- | --- |
+| **Node.js ≥ 22.19** | `npx mcp-secure-remote …` | [npm](https://www.npmjs.com/package/mcp-secure-remote) | `mcp-secure-remote`, `mcp-secure-remote-client` |
+| **Python ≥ 3.10** | `uvx mcp-secure-remote …` | [PyPI](https://pypi.org/project/mcp-secure-remote/) | `mcp-secure-remote`, `mcp-secure-remote-client` |
 
-Both expose the same CLI flags, environment variables, and bin names
-(`mcp-secure-remote`, `mcp-secure-remote-client`).
+Both packages accept the same flags, environment variables, and positional
+`<server-url>`. Pick whichever launcher your agent already has.
 
-Works with any MCP-capable AI agent or IDE — Claude Desktop, Claude Code,
-Cursor, Windsurf, Cline, Continue, Zed, VS Code MCP extensions, and any
-custom client that speaks the MCP stdio transport.
+Works with Claude Desktop, Claude Code, Cursor, Windsurf, Cline, Continue,
+Zed, VS Code MCP extensions, and any custom client that speaks MCP stdio.
+
+<p align="center">
+  <img src="docs/images/architecture_overview.png" alt="Architecture: MCP client talks stdio JSON-RPC to mcp-secure-remote, which forwards HTTPS plus a client certificate to the remote MCP server" width="920" />
+</p>
+
+<p align="center">
+  <img src="docs/images/dual_package.png" alt="One git repo with package.json and pyproject.toml publishes to npm (npx) and PyPI (uvx)" width="920" />
+</p>
 
 ---
 
@@ -21,118 +30,208 @@ custom client that speaks the MCP stdio transport.
 
 1. [What it does](#what-it-does)
 2. [How it works](#how-it-works)
-3. [Prerequisites](#prerequisites)
-4. [Install](#install)
-5. [Generate or obtain client certificates](#generate-or-obtain-client-certificates)
-6. [Quick start](#quick-start)
-7. [CLI parameters](#cli-parameters)
-8. [Environment variables](#environment-variables)
-9. [AI agent / IDE integration](#ai-agent--ide-integration)
-   - [Claude Desktop](#claude-desktop)
-   - [Claude Code (CLI)](#claude-code-cli)
-   - [Cursor](#cursor)
-   - [Windsurf](#windsurf)
-   - [Cline (VS Code)](#cline-vs-code)
-   - [Continue (VS Code / JetBrains)](#continue-vs-code--jetbrains)
-   - [Zed](#zed)
-   - [Generic MCP client](#generic-mcp-client)
-10. [Testing your setup](#testing-your-setup)
-11. [Security notes](#security-notes)
-12. [Troubleshooting](#troubleshooting)
-13. [Docker](#docker)
-14. [Development](#development)
-15. [License](#license)
+3. [Two runtimes, one CLI](#two-runtimes-one-cli)
+4. [Prerequisites](#prerequisites)
+5. [Install](#install)
+6. [Generate or obtain client certificates](#generate-or-obtain-client-certificates)
+7. [Local mTLS lab](#local-mtls-lab)
+8. [Quick start](#quick-start)
+9. [CLI parameters](#cli-parameters)
+10. [Environment variables](#environment-variables)
+11. [Transport negotiation](#transport-negotiation)
+12. [SNI and hostname overrides](#sni-and-hostname-overrides)
+13. [AI agent / IDE integration](#ai-agent--ide-integration)
+    - [Claude Desktop](#claude-desktop)
+    - [Claude Code (CLI)](#claude-code-cli)
+    - [Cursor](#cursor)
+    - [Windsurf](#windsurf)
+    - [Cline (VS Code)](#cline-vs-code)
+    - [Continue (VS Code / JetBrains)](#continue-vs-code--jetbrains)
+    - [Zed](#zed)
+    - [Generic MCP client](#generic-mcp-client)
+14. [Testing your setup](#testing-your-setup)
+15. [Security notes](#security-notes)
+16. [Troubleshooting](#troubleshooting)
+17. [Docker](#docker)
+18. [Development](#development)
+19. [Publishing](#publishing)
+20. [Repository layout](#repository-layout)
+21. [License](#license)
 
 ---
 
 ## What it does
 
-`mcp-secure-remote` spawns as a local stdio MCP server and forwards every
-JSON-RPC message to a remote MCP server over HTTPS. Every outbound request
-carries a client certificate you supply, so the remote server sees a
-cryptographically authenticated connection — no OAuth dance, no bearer
-tokens on the wire, no shared API keys.
+`mcp-secure-remote` starts as a **local stdio MCP server**. Your AI agent
+already knows how to spawn that. The proxy then forwards every JSON-RPC
+message to a **remote MCP server over HTTPS**, presenting a client
+certificate on the TLS handshake.
 
-```
-┌──────────────┐   stdio    ┌────────────────────┐   HTTPS + mTLS   ┌───────────────┐
-│ MCP client   │───────────▶│ mcp-secure-remote  │─────────────────▶│ Remote MCP    │
-│ (Claude,     │            │ (npx or uvx)       │                  │ server        │
-│  Cursor, …)  │◀───────────│                    │◀─────────────────│               │
-└──────────────┘            └────────────────────┘                  └───────────────┘
+There is no OAuth dance, no bearer token on the wire, and no shared API
+key. The remote server authenticates the caller with the certificate you
+provisioned.
+
+```mermaid
+flowchart LR
+  subgraph local [Your machine]
+    agent[MCP client]
+    proxy[mcp-secure-remote]
+  end
+  subgraph remote [Remote host]
+    server[Remote MCP server]
+  end
+  agent -->|"stdio JSON-RPC"| proxy
+  proxy -->|"HTTPS + client cert"| server
+  server -->|"HTTPS + server cert"| proxy
+  proxy -->|"stdio JSON-RPC"| agent
 ```
 
-The remote MCP server can be implemented in any language. The proxy only
-sees HTTPS + JSON-RPC.
+The remote MCP implementation can be any language. This proxy only sees
+HTTPS and JSON-RPC.
+
+Two binaries ship in both packages:
+
+| Binary | Role |
+| --- | --- |
+| `mcp-secure-remote` | Long-lived stdio ↔ remote proxy for agents |
+| `mcp-secure-remote-client` | One-shot probe: handshake, then list tools / resources / prompts |
+
+---
 
 ## How it works
 
-1. AI agent launches `mcp-secure-remote` as a local subprocess (`npx` or
-   `uvx`) and talks to it over stdio (the transport every MCP client
-   already supports).
-2. The Node package builds an undici HTTPS dispatcher; the Python package
-   builds an httpx client. Both are seeded with your client cert, private
-   key, and trusted CA bundle.
-3. Proxy opens either a Streamable HTTP or SSE transport to the remote
-   server (configurable). TLS handshake presents the client cert; server
-   validates it before forwarding the MCP session.
-4. JSON-RPC frames flow bidirectionally. All proxy logging goes to stderr
-   so the stdio channel stays clean.
+<p align="center">
+  <img src="docs/images/mtls_handshake.png" alt="mTLS handshake: ClientHello plus SNI, server certificate, client certificate, then encrypted MCP JSON-RPC" width="920" />
+</p>
+
+1. The agent launches `mcp-secure-remote` (via `npx` or `uvx`) as a local
+   subprocess and talks to it over **stdio**.
+2. The Node package builds an **undici** HTTPS dispatcher. The Python
+   package builds an **httpx** / **httpx2** client (whichever the installed
+   MCP SDK expects). Both are seeded with your client cert, private key,
+   and trusted CA bundle.
+3. The proxy opens **Streamable HTTP** or **SSE** to the remote URL
+   (see [Transport negotiation](#transport-negotiation)). The TLS
+   handshake presents the client cert. The server must accept it before
+   any MCP session starts.
+4. JSON-RPC frames flow both ways. Proxy logs go to **stderr** so stdout
+   stays a clean MCP stream.
+
+```mermaid
+sequenceDiagram
+  participant Agent as MCP_client
+  participant Proxy as mcp_secure_remote
+  participant Remote as Remote_MCP
+  Agent->>Proxy: spawn stdio
+  Agent->>Proxy: JSON-RPC request
+  Proxy->>Remote: TLS ClientHello plus SNI
+  Remote-->>Proxy: server certificate
+  Proxy->>Remote: client certificate
+  Note over Proxy,Remote: mTLS established
+  Proxy->>Remote: Streamable HTTP or SSE
+  Remote-->>Proxy: JSON-RPC response
+  Proxy-->>Agent: JSON-RPC response on stdout
+```
+
+---
+
+## Two runtimes, one CLI
+
+```mermaid
+flowchart TB
+  repo[Git repo]
+  repo --> npmMeta[package.json]
+  repo --> pyMeta[pyproject.toml]
+  npmMeta --> npmReg[npm registry]
+  pyMeta --> pypi[PyPI]
+  npmReg --> npx["npx mcp-secure-remote"]
+  pypi --> uvx["uvx mcp-secure-remote"]
+  npx --> sameCli[Same flags and MCP_REMOTE_TLS_* env]
+  uvx --> sameCli
+```
+
+| | Node | Python |
+| --- | --- | --- |
+| Sources | `src/*.ts`, `src/lib/` | `src/mcp_secure_remote/` |
+| HTTP stack | `@modelcontextprotocol/sdk` + `undici` | `mcp` + `httpx` / `httpx2` |
+| TLS | Node `tls` / undici `Agent` | `ssl.SSLContext` (SNI override on `wrap_socket` / `wrap_bio`) |
+| Tests | Vitest in `test/unit/` | pytest in `tests/` |
+| Build output | `dist/` | `dist-py/` |
+| Default Docker target | `npm` | `--target python` |
+
+You do **not** need both runtimes installed. Agents typically use one.
+
+---
 
 ## Prerequisites
 
-Pick one runtime:
+Pick **one** runtime:
 
-- **Node.js ≥ 22.19** (npm / `npx`)
-- **Python ≥ 3.10** plus [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-  (`curl -LsSf https://astral.sh/uv/install.sh | sh` on macOS/Linux)
+- **Node.js ≥ 22.19** and npm / `npx`
+- **Python ≥ 3.10** and [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+  (`curl -LsSf https://astral.sh/uv/install.sh | sh` on macOS/Linux).
+  `pip` also works if you prefer a venv.
 
-Also required regardless of runtime:
+Also required for any runtime:
 
-- A client certificate + private key issued by a CA the remote MCP server
-  trusts (or a PKCS#12 bundle containing both).
-- The CA bundle used by the remote server, if it is not in your OS trust
-  store (private/corporate CAs almost always need this).
-- The remote MCP server URL (typically `https://host/mcp` or
-  `https://host/sse`).
+- A **client certificate + private key** issued by a CA the remote MCP
+  server trusts, **or** a PKCS#12 (`.pfx` / `.p12`) bundle
+- The **server CA bundle** if the remote cert is not in the OS trust store
+  (almost always true for private / corporate CAs)
+- The remote MCP URL, usually `https://host/mcp` or `https://host/sse`
+
+---
 
 ## Install
 
 ### Node (npm / npx)
 
 ```bash
+# ephemeral — recommended in agent configs (always latest compatible)
+npx mcp-secure-remote --help
+
 # global
 npm install -g mcp-secure-remote
+mcp-secure-remote --help
 
-# or ephemeral (recommended for agent configs)
-npx mcp-secure-remote <server-url> [options]
+# from this repo
+git clone https://github.com/framedparadox/mcp-secure-remote.git
+cd mcp-secure-remote
+npm install
+npm run build
+node dist/proxy.js --help
 ```
 
-### Python (uv / uvx / PyPI)
+`npx github:framedparadox/mcp-secure-remote` also works because
+`package.json` lives at the repo root.
 
-`uvx` runs the package from PyPI in an isolated environment — no explicit
-install step needed:
+### Python (uv / uvx / pip)
 
 ```bash
+# ephemeral isolated env from PyPI
 uvx mcp-secure-remote --help
-```
 
-To install permanently in a `uv`-managed tool environment:
-
-```bash
+# persistent uv tool
 uv tool install mcp-secure-remote
 mcp-secure-remote --help
+
+# pip / venv
+python -m pip install mcp-secure-remote
+
+# from this repo
+uv sync --extra dev
+uv run mcp-secure-remote --help
 ```
 
-Or with pip:
+`uvx --from git+https://github.com/framedparadox/mcp-secure-remote mcp-secure-remote`
+works because `pyproject.toml` lives at the repo root.
 
-```bash
-pip install mcp-secure-remote
-```
+---
 
 ## Generate or obtain client certificates
 
-If your team already issues client certs, skip this section. For local
-testing, generate a throw-away CA + client cert pair with OpenSSL:
+If your platform team already issues client certs, skip to
+[Quick start](#quick-start). For a throw-away local CA + client pair:
 
 ```bash
 # CA
@@ -148,17 +247,99 @@ openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -out client.crt -days 365 -sha256
 ```
 
-This repo also ships helpers under [`scripts/`](./scripts):
+Configure the remote MCP server to **require** client certs signed by
+`ca.crt`. Point this proxy at `client.crt` + `client.key` + the server's
+CA bundle (often the same `ca.crt` in a lab).
 
-- `scripts/generate_dev_mtls_certs.sh` — generate a local CA + client cert
-- `scripts/mock_mtls_mcp_server.py` — a tiny mTLS-required MCP endpoint
+Prefer the repo helper if you also want a **server** cert, PKCS#12 bundle,
+and localhost SANs — see [Local mTLS lab](#local-mtls-lab).
 
-Configure the remote MCP server to require client certs signed by `ca.crt`.
-Point the proxy at `client.crt` + `client.key` + the server's CA bundle.
+---
+
+## Local mTLS lab
+
+This repo ships a complete loopback lab. Nothing in `certs/` is committed
+(`.gitignore` covers `*.crt`, `*.key`, `*.p12`, `certs/*`).
+
+### 1. Generate materials
+
+```bash
+scripts/generate_dev_mtls_certs.sh            # writes certs/dev/
+scripts/generate_dev_mtls_certs.sh certs/lab  # custom output dir
+```
+
+Environment overrides:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DAYS` | `365` | Certificate lifetime |
+| `P12_PASSPHRASE` | `dev-password` | Passphrase for `client.p12` |
+
+The script refuses to overwrite an existing tree. Delete the directory or
+pick another path.
+
+Outputs in the target directory:
+
+| File | Role |
+| --- | --- |
+| `ca.crt` / `ca.key` | Dev CA (trust this as `--tls-ca`) |
+| `server.crt` / `server.key` | Server identity for `localhost`, `127.0.0.1`, `::1` |
+| `client.crt` / `client.key` | Client identity (`clientAuth` EKU) |
+| `client.p12` | PKCS#12 alternative to cert + key |
+
+### 2. Run the mock server
+
+Requires the generated cert dir and Python deps (`uv sync --extra dev`
+or `pip install mcp uvicorn`).
+
+```bash
+# Streamable HTTP on https://localhost:8443/mcp
+scripts/mock_mtls_mcp_server.py --cert-dir certs/dev
+
+# SSE instead
+scripts/mock_mtls_mcp_server.py --cert-dir certs/dev --transport sse
+```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--host` | `127.0.0.1` | Bind address |
+| `--port` | `8443` | Bind port |
+| `--cert-dir` | `certs/dev` | Must contain `ca.crt`, `server.crt`, `server.key` |
+| `--transport` | `streamable-http` | `streamable-http` or `sse` |
+| `--mcp-path` | `/mcp` | Streamable HTTP path |
+| `--sse-path` | `/sse` | SSE path |
+| `--message-path` | `/messages/` | SSE message path |
+
+The mock **requires** a client cert signed by that CA (`ssl.CERT_REQUIRED`).
+It exposes `ping`, `echo`, resource `mock://mtls/status`, and `GET /healthz`.
+
+### 3. Probe it
+
+The mock presents a `localhost` SAN. If you connect via `127.0.0.1`,
+set `--tls-servername localhost`.
+
+```bash
+npx mcp-secure-remote-client https://127.0.0.1:8443/mcp \
+  --tls-cert certs/dev/client.crt \
+  --tls-key  certs/dev/client.key \
+  --tls-ca   certs/dev/ca.crt \
+  --tls-servername localhost
+
+uvx mcp-secure-remote-client https://127.0.0.1:8443/mcp \
+  --tls-cert certs/dev/client.crt \
+  --tls-key  certs/dev/client.key \
+  --tls-ca   certs/dev/ca.crt \
+  --tls-servername localhost \
+  --debug
+```
+
+You should see capabilities plus the `ping` / `echo` tools.
+
+---
 
 ## Quick start
 
-Cert + key pair (Node):
+Cert + key (Node):
 
 ```bash
 npx mcp-secure-remote https://mcp.example.com/mcp \
@@ -167,7 +348,7 @@ npx mcp-secure-remote https://mcp.example.com/mcp \
   --tls-ca   ./certs/ca-bundle.pem
 ```
 
-The same flags on Python:
+Same flags on Python:
 
 ```bash
 uvx mcp-secure-remote https://mcp.example.com/mcp \
@@ -176,7 +357,7 @@ uvx mcp-secure-remote https://mcp.example.com/mcp \
   --tls-ca   ./certs/ca-bundle.pem
 ```
 
-PKCS#12 bundle:
+PKCS#12:
 
 ```bash
 npx mcp-secure-remote https://mcp.example.com/mcp \
@@ -185,7 +366,16 @@ npx mcp-secure-remote https://mcp.example.com/mcp \
   --tls-ca        ./certs/ca-bundle.pem
 ```
 
-Force SSE transport + pin minimum TLS:
+Prefer the env var for the passphrase so it does not appear in `ps`:
+
+```bash
+export MCP_REMOTE_TLS_PFX=./certs/client.p12
+export MCP_REMOTE_TLS_PASSPHRASE='…'
+export MCP_REMOTE_TLS_CA=./certs/ca-bundle.pem
+uvx mcp-secure-remote https://mcp.example.com/mcp
+```
+
+Force SSE and pin TLS 1.3:
 
 ```bash
 uvx mcp-secure-remote https://mcp.example.com/sse \
@@ -196,52 +386,89 @@ uvx mcp-secure-remote https://mcp.example.com/sse \
   --tls-ca   ./certs/ca-bundle.pem
 ```
 
+Connect to an IP whose certificate SAN is a DNS name:
+
+```bash
+npx mcp-secure-remote https://192.0.2.10/mcp \
+  --tls-servername mcp.internal.example \
+  --tls-cert ./certs/client.crt \
+  --tls-key  ./certs/client.key \
+  --tls-ca   ./certs/ca-bundle.pem
+```
+
+Extra headers (repeatable):
+
+```bash
+npx mcp-secure-remote https://mcp.example.com/mcp \
+  --header "X-Tenant: acme" \
+  --header "X-Request-Id: local-debug" \
+  --tls-cert ./certs/client.crt \
+  --tls-key  ./certs/client.key \
+  --tls-ca   ./certs/ca-bundle.pem
+```
+
+---
+
 ## CLI parameters
 
-Usage: `mcp-secure-remote <server-url> [options]`
+Usage (both binaries):
 
-`<server-url>` is a positional argument (required). Everything else is a
-named flag. The Node and Python packages accept the same arguments.
+```text
+mcp-secure-remote <server-url> [options]
+mcp-secure-remote-client <server-url> [options]
+```
+
+`<server-url>` is required and positional. Everything else is a named
+flag. Node and Python accept the same arguments.
 
 ### General
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `<server-url>` | string (URL) | — | **Required.** Remote MCP endpoint. Must be `https://…` unless `--allow-http` is set. |
-| `--header "Name: value"` | string (repeatable) | — | Extra HTTP header on every outbound request. Repeat the flag for multiple headers. |
-| `--transport <strategy>` | enum | `http-first` | Transport negotiation. One of `http-first`, `sse-first`, `http-only`, `sse-only`. `-first` variants try the preferred transport then fall back; `-only` variants never fall back. |
-| `--allow-http` | boolean | `false` | Permit plain `http://` URLs. Off by default; mTLS is meaningless over HTTP. |
-| `--debug` | boolean | `false` | Verbose logging to stderr (parsed args, per-message trace, transport selection). |
-| `-h`, `--help` | boolean | — | Print usage and exit. |
+| `<server-url>` | URL | — | **Required.** Remote MCP endpoint. Must be `https://…` unless `--allow-http` is set. No userinfo (`user:pass@`). |
+| `--header "Name: value"` | string, repeatable | — | Extra HTTP header on every outbound request. Name must be an RFC 7230 token. Value must not contain CR, LF, or NUL. |
+| `--transport <strategy>` | enum | `http-first` | `http-first`, `sse-first`, `http-only`, `sse-only`. See [Transport negotiation](#transport-negotiation). |
+| `--allow-http` | boolean | `false` | Permit `http://` URLs. mTLS is meaningless over plain HTTP; the proxy warns if TLS flags are also set. |
+| `--debug` | boolean | `false` | Verbose logging to stderr: redacted args, transport choice, per-message metadata (not payloads). |
+| `-h`, `--help` | boolean | — | Print usage to stderr and exit `0`. |
 
 ### mTLS / TLS
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--tls-cert <path>` | path | — | PEM client certificate (leaf, optionally followed by chain intermediates). |
-| `--tls-key <path>` | path | — | PEM private key matching `--tls-cert`. Must be supplied together with `--tls-cert`. |
-| `--tls-ca <path>` | path | — | PEM CA bundle used to verify the remote server. Required for private CAs not in the OS trust store. |
-| `--tls-pfx <path>` | path | — | PKCS#12 (`.pfx` / `.p12`) bundle. Mutually exclusive with `--tls-cert`/`--tls-key`. |
-| `--tls-passphrase <value>` | string | — | Passphrase protecting the private key or PFX bundle. Prefer the env var to keep secrets off the command line. |
-| `--tls-servername <name>` | string | URL hostname | SNI override. Use when the server cert's SAN differs from the URL host (e.g. IP literal, internal DNS). |
-| `--tls-min-version <ver>` | enum | runtime default | Minimum TLS version: `TLSv1.2` or `TLSv1.3`. |
-| `--tls-insecure-skip-verify`, `--tls-no-verify` | boolean | `false` | Disable server certificate validation. **Dev only.** Proxy prints a warning when enabled. |
+| `--tls-cert <path>` | path | — | PEM client certificate (leaf, optionally followed by intermediates). |
+| `--tls-key <path>` | path | — | PEM private key matching `--tls-cert`. Required together with `--tls-cert`. |
+| `--tls-ca <path>` | path | — | PEM CA bundle used to verify the **server**. Required for private CAs. |
+| `--tls-pfx <path>` | path | — | PKCS#12 (`.pfx` / `.p12`). Mutually exclusive with `--tls-cert` / `--tls-key`. |
+| `--tls-passphrase <value>` | string | — | Passphrase for the key or PFX. Prefer `MCP_REMOTE_TLS_PASSPHRASE`. |
+| `--tls-servername <name>` | string | URL hostname | SNI **and** certificate hostname. Use for IP URLs, split DNS, or SAN mismatch. |
+| `--tls-min-version <ver>` | enum | TLS 1.2 floor | `TLSv1.2` or `TLSv1.3`. The proxy never goes below TLS 1.2 even if you omit this. |
+| `--tls-insecure-skip-verify`, `--tls-no-verify` | boolean | `false` | Disable server cert validation. **Dev only.** Prints a warning. |
 
 ### Parameter rules
 
 - `--tls-cert` and `--tls-key` must appear together.
-- `--tls-pfx` cannot combine with `--tls-cert`/`--tls-key`.
-- `--allow-http` is required for any `http://` URL. Supplying mTLS flags
-  with `http://` triggers a warning (cert is not sent over plain HTTP).
-- Unknown `--flags` cause parse failure with exit code 2.
-- Argument errors exit with code 2; runtime errors exit with code 1.
-- URLs with embedded credentials, such as `https://user:pass@example.com/mcp`,
-  are rejected. Use `--header` or environment configuration for credentials.
+- `--tls-pfx` cannot combine with `--tls-cert` / `--tls-key`.
+- `--tls-passphrase` requires a PFX or a cert/key pair.
+- `--allow-http` is required for any `http://` URL.
+- Unknown `--flags` fail parse with exit code **2**.
+- Argument errors exit **2**. Runtime errors exit **1**. Interrupt exits **0**.
+- `https://user:pass@host/mcp` is rejected. Use `--header` or env instead.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success, `--help`, or clean interrupt |
+| `1` | Runtime / TLS / transport failure |
+| `2` | CLI parse error (missing URL, bad flag, bad header) |
+
+---
 
 ## Environment variables
 
-Every TLS flag has an env-var fallback so secrets can stay out of shell
-history and MCP client configs.
+Every TLS flag has an env-var fallback so secrets stay out of `ps`, shell
+history, and agent config files.
 
 | Variable | Equivalent flag | Values |
 | --- | --- | --- |
@@ -251,19 +478,105 @@ history and MCP client configs.
 | `MCP_REMOTE_TLS_PFX` | `--tls-pfx` | path |
 | `MCP_REMOTE_TLS_PASSPHRASE` | `--tls-passphrase` | string |
 | `MCP_REMOTE_TLS_SERVERNAME` | `--tls-servername` | string |
-| `MCP_REMOTE_TLS_MIN_VERSION` | `--tls-min-version` | `TLSv1.2` \| `TLSv1.3` |
-| `MCP_REMOTE_TLS_INSECURE` | `--tls-insecure-skip-verify` | `1` / `true` / `yes` to disable verify |
+| `MCP_REMOTE_TLS_MIN_VERSION` | `--tls-min-version` | `TLSv1.2` or `TLSv1.3` (invalid values fail parse) |
+| `MCP_REMOTE_TLS_INSECURE` | `--tls-insecure-skip-verify` | `1` / `true` / `yes` (case-insensitive) disables verify |
 
-Precedence: explicit CLI flag overrides env var.
+**Precedence:** an explicit CLI flag always wins over the env var.
+
+Empty env values are treated as unset.
+
+---
+
+## Transport negotiation
+
+MCP remotes typically expose **Streamable HTTP** (`/mcp`) or **SSE**
+(`/sse`). The `--transport` strategy controls which is tried first and
+whether fallback is allowed.
+
+```mermaid
+flowchart TD
+  start[connect_to_remote_server]
+  start --> strategy{strategy}
+  strategy -->|http-first| httpA[Try Streamable HTTP]
+  strategy -->|sse-first| sseA[Try SSE]
+  strategy -->|http-only| httpOnly[Try Streamable HTTP]
+  strategy -->|sse-only| sseOnly[Try SSE]
+  httpA -->|ok| done[Use that transport]
+  httpA -->|fail| sseB[Try SSE]
+  sseA -->|ok| done
+  sseA -->|fail| httpB[Try Streamable HTTP]
+  sseB -->|ok| done
+  sseB -->|fail| fail[Raise last error]
+  httpB -->|ok| done
+  httpB -->|fail| fail
+  httpOnly -->|ok| done
+  httpOnly -->|fail| fail
+  sseOnly -->|ok| done
+  sseOnly -->|fail| fail
+```
+
+| Strategy | First try | Fallback |
+| --- | --- | --- |
+| `http-first` (default) | Streamable HTTP | SSE |
+| `sse-first` | SSE | Streamable HTTP |
+| `http-only` | Streamable HTTP | none |
+| `sse-only` | SSE | none |
+
+Fallback only happens when the **first** transport fails to connect. If
+the session is already up and later errors, the proxy does not silently
+switch transports.
+
+If the remote hangs with no useful error, pin `--transport http-only` or
+`--transport sse-only` and add `--debug`.
+
+---
+
+## SNI and hostname overrides
+
+`--tls-servername` exists for the common lab/prod mismatch: you connect
+to an IP or internal hostname, but the server certificate SAN is a
+different DNS name.
+
+On **Node**, the value is passed as undici / `tls` `servername` (SNI +
+verification).
+
+On **Python**, `ssl.SSLContext` has no `servername` field, so the proxy
+rewrites `wrap_socket` / `wrap_bio` to force that hostname for both SNI
+and certificate matching. Behavior matches Node.
+
+Example: mock server cert is `CN=localhost` with SAN `localhost`. Client
+URL is `https://127.0.0.1:8443/mcp`:
+
+```bash
+--tls-servername localhost
+```
+
+Without the override you typically get a hostname / IP mismatch error.
+
+---
 
 ## AI agent / IDE integration
 
-Every agent below launches the proxy as a local stdio MCP server. Pattern
-is identical — only the config file format differs. **Use absolute paths**;
-agents do not inherit your shell's working directory.
+Every agent below launches the proxy as a local stdio MCP server. Only
+the config file format changes.
+
+**Use absolute paths.** Agents do not inherit your shell cwd.
 
 `npx` and `uvx` are interchangeable. To use Python, replace
 `"command": "npx"` with `"command": "uvx"` and keep the same `args`.
+Move passphrases into `env` whenever you can.
+
+```mermaid
+flowchart LR
+  ide[IDE or agent]
+  ide --> spawn[spawn command plus args]
+  spawn --> npx["npx mcp-secure-remote …"]
+  spawn --> uvx["uvx mcp-secure-remote …"]
+  spawn --> docker["docker run -i …"]
+  npx --> remote[Remote MCP]
+  uvx --> remote
+  docker --> remote
+```
 
 ### Claude Desktop
 
@@ -310,9 +623,6 @@ Restart Claude Desktop after editing.
 
 ### Claude Code (CLI)
 
-Add a server via the `claude mcp add` command or edit
-`~/.claude.json` / project `.mcp.json`:
-
 ```bash
 claude mcp add example npx -- mcp-secure-remote \
   https://mcp.example.com/mcp \
@@ -320,8 +630,6 @@ claude mcp add example npx -- mcp-secure-remote \
   --tls-key  /absolute/path/client.key \
   --tls-ca   /absolute/path/ca-bundle.pem
 ```
-
-Or with `uvx`:
 
 ```bash
 claude mcp add example uvx -- mcp-secure-remote \
@@ -331,7 +639,7 @@ claude mcp add example uvx -- mcp-secure-remote \
   --tls-ca   /absolute/path/ca-bundle.pem
 ```
 
-Or in `.mcp.json`:
+Or in project `.mcp.json` / `~/.claude.json`:
 
 ```json
 {
@@ -398,7 +706,7 @@ File: `~/.codeium/windsurf/mcp_config.json`.
 ### Cline (VS Code)
 
 Cline reads `cline_mcp_settings.json` from its extension storage. Open
-the Cline MCP panel → "Configure MCP Servers" or edit the file directly:
+the Cline MCP panel → "Configure MCP Servers", or edit the file:
 
 ```json
 {
@@ -470,18 +778,41 @@ File: `~/.config/zed/settings.json`.
 
 ### Generic MCP client
 
-Any client that spawns stdio MCP servers works. Required pieces:
+Any client that spawns stdio MCP servers works:
 
-- `command`: `npx` or `uvx` (or `node dist/proxy.js` / `mcp-secure-remote`
-  after a local install).
-- `args`: `["mcp-secure-remote", "<server-url>", …flags]`.
-- Optional `env` block for `MCP_REMOTE_TLS_*` variables to keep secrets
-  out of the args array.
+| Field | Value |
+| --- | --- |
+| `command` | `npx`, `uvx`, `docker`, `node`, or `mcp-secure-remote` after a global/tool install |
+| `args` | `["mcp-secure-remote", "<server-url>", …flags]` (omit the package name when `command` is already the binary) |
+| `env` | optional `MCP_REMOTE_TLS_*` map |
+
+Docker as the command (stdio still works because of `-i`):
+
+```json
+{
+  "mcpServers": {
+    "example": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "-v", "/absolute/path/to/certs:/certs:ro",
+        "-e", "MCP_REMOTE_TLS_CERT=/certs/client.crt",
+        "-e", "MCP_REMOTE_TLS_KEY=/certs/client.key",
+        "-e", "MCP_REMOTE_TLS_CA=/certs/ca-bundle.pem",
+        "mcp-secure-remote",
+        "https://mcp.example.com/mcp"
+      ]
+    }
+  }
+}
+```
+
+---
 
 ## Testing your setup
 
-Bundled `mcp-secure-remote-client` verifies the TLS handshake and enumerates the
-server's capabilities — no real agent needed:
+`mcp-secure-remote-client` verifies the TLS handshake and lists tools,
+resources, and prompts. No agent required.
 
 ```bash
 npx mcp-secure-remote-client https://mcp.example.com/mcp \
@@ -494,83 +825,114 @@ npx mcp-secure-remote-client https://mcp.example.com/mcp \
 uvx mcp-secure-remote-client https://mcp.example.com/mcp \
   --tls-cert ./certs/client.crt \
   --tls-key  ./certs/client.key \
-  --tls-ca   ./certs/ca-bundle.pem
+  --tls-ca   ./certs/ca-bundle.pem \
+  --debug
 ```
 
-Output: negotiated capabilities + lists of tools, resources, prompts.
+Expected output: negotiated capabilities, then sanitized names/descriptions
+for tools, resources, and prompts.
 
-Add `--debug` for per-message tracing.
+For a local server that actually requires a client cert, use the
+[Local mTLS lab](#local-mtls-lab).
 
-For a fully local endpoint that requires client-certificate authentication,
-use [`scripts/generate_dev_mtls_certs.sh`](./scripts/generate_dev_mtls_certs.sh)
-and [`scripts/mock_mtls_mcp_server.py`](./scripts/mock_mtls_mcp_server.py).
+---
 
 ## Security notes
 
-- **HTTPS only by default.** `http://` URLs are refused unless
-  `--allow-http` is explicitly set. Proxy additionally warns when mTLS
-  flags are combined with `http://` because the client cert will not be
-  sent.
-- **Redirects are rejected.** Outbound transport requests do not follow HTTP
-  redirects, which prevents a remote endpoint from bouncing the client to a
-  different host and reusing the configured TLS credentials there.
-- **Skip-verify prints a warning.** `--tls-insecure-skip-verify` disables
-  server certificate validation; intended for local dev loops only.
-- **Prefer env vars for passphrases.** Anything on the CLI may leak into
-  process listings, shell history, or agent logs.
-- **Debug logging redacts secrets.** The bundled client and proxy avoid
-  printing TLS passphrases or header values in `--debug` output. Proxy message
-  tracing logs only JSON-RPC metadata, not full tool arguments or results.
-- **Embedded URL credentials are refused.** Userinfo in the remote URL is not
-  accepted because it can leak through process lists and logs.
-- **Proxy logs to stderr.** stdout is reserved for the MCP JSON-RPC stream.
+- **HTTPS only by default.** `http://` is refused unless `--allow-http`
+  is set. Combining mTLS flags with `http://` warns: the client cert is
+  not sent over plain HTTP.
+- **Redirects are rejected.** Outbound requests set `redirect: error`
+  (Node) / `follow_redirects=False` (Python). A remote cannot bounce the
+  client to another host and reuse the TLS credentials.
+- **Origin pinning.** Every outbound request is checked against the
+  origin of `<server-url>` (scheme + host + port). A different origin is
+  refused.
+- **SNI override is not a verify bypass.** `--tls-servername` changes
+  which name is sent and checked; it does not disable verification.
+- **Skip-verify prints a warning.** `--tls-insecure-skip-verify` is for
+  local loops only.
+- **Header injection is rejected.** Header names must be RFC 7230 tokens.
+  Values cannot contain CR, LF, or NUL.
+- **Prefer env vars for passphrases.** CLI values leak into process
+  listings, shell history, and some agent logs.
+- **Debug logging redacts secrets.** Passphrases and header **values**
+  are not printed. Message traces log kind / id / method only — not tool
+  arguments or results.
+- **Embedded URL credentials are refused.** Userinfo can leak through
+  `ps` and logs.
+- **Proxy logs to stderr.** stdout is reserved for MCP JSON-RPC.
 - **Client output is terminal-sanitized.** Tool names, descriptions,
-  resources, and prompts received from the remote server are escaped before
-  being written to the terminal.
-- **No credential persistence.** Proxy does not write certs, keys, or
-  tokens to disk.
-- **Pin TLS 1.3** (`--tls-min-version TLSv1.3`) when the server supports
-  it, to avoid downgrade-prone 1.2 cipher suites.
+  resources, and prompts have ANSI / control characters stripped before
+  they hit the terminal.
+- **No credential persistence.** The proxy does not write certs, keys, or
+  tokens to disk (Python PFX handling uses short-lived temp files that
+  are zero-filled and unlinked).
+- **TLS 1.2 floor.** Even without `--tls-min-version`, Python sets
+  `minimum_version = TLSv1_2`. Pin `TLSv1.3` when the server allows it.
+
+---
 
 ## Troubleshooting
 
 **`self signed certificate in certificate chain` / `unable to verify the first certificate` / `CERTIFICATE_VERIFY_FAILED`**
-Point `--tls-ca` at the PEM bundle that signed the remote server's cert.
-OS trust store alone is not enough for private CAs.
+Point `--tls-ca` at the PEM bundle that signed the **server** cert. The
+OS trust store is not enough for private CAs.
 
 **`Hostname/IP does not match certificate's altnames`**
-Set `--tls-servername` to the SAN the server cert presents.
+Set `--tls-servername` to a SAN the server cert actually presents. Common
+when the URL is an IP and the cert is `CN=localhost`.
 
 **`error:0909006C:PEM routines:get_name:no start line` / private key malformed**
-Private key file malformed or encrypted. If encrypted, supply
-`--tls-passphrase` (or `MCP_REMOTE_TLS_PASSPHRASE`). Ensure the key file
-is PEM-encoded.
+Key is not PEM, or it is encrypted. Supply `--tls-passphrase` or
+`MCP_REMOTE_TLS_PASSPHRASE`.
 
 **`ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE` / `alert bad certificate`**
-Server rejected your client cert. Check:
-- Cert signed by a CA the server trusts.
+The server rejected the **client** cert. Check:
+
+- Cert is signed by a CA the server trusts
 - Key matches cert:
   `openssl x509 -noout -modulus -in client.crt | openssl md5`
-  vs. `openssl rsa -noout -modulus -in client.key | openssl md5`.
-- Intermediate chain present in `--tls-cert`.
+  vs.
+  `openssl rsa -noout -modulus -in client.key | openssl md5`
+- Intermediate chain is present in `--tls-cert` if the server needs it
+- Cert has `clientAuth` EKU if the server requires it
 
 **Agent shows "failed to start server" with no detail.**
-Run the exact same command in a terminal to see stderr. Agents hide
-subprocess stderr by default.
+Run the exact same command in a terminal. Agents hide subprocess stderr.
 
 **Remote transport hangs.**
-Try `--transport sse-only` or `--transport http-only` to isolate which
-transport the server actually implements. Add `--debug`.
+Try `--transport sse-only` or `--transport http-only`. Add `--debug`.
 
-**`already started` error in `mcp-secure-remote-client`.**
-Upgrade — prior Node versions double-started the transport. Fixed in current
-release.
+**`already started` in `mcp-secure-remote-client`.**
+Upgrade. Older Node builds started the transport twice.
+
+**`mcp streamable_http_client has an unrecognised signature`**
+The installed `mcp` Python package is newer or older than the injection
+paths this proxy knows. Upgrade `mcp-secure-remote`, or pin `mcp` to a
+supported release. mcp 2.x is supported (httpx2 client, headers on the
+client, not on the transport).
+
+**`--help` should exit 0.**
+If an old Python build exits 2 on `--help`, upgrade. Current builds treat
+`SystemExit(0)` as success.
+
+---
 
 ## Docker
 
-The `Dockerfile` is multi-target. The default image is the Node runtime
-(same as previous npm-only releases). Pass `--target python` for the
-Python image, which installs the local package with `pip install .`.
+The `Dockerfile` is multi-target. The **default** image is Node (same as
+older npm-only releases). `--target python` installs the local package
+with `pip install .` and runs as a non-root `mcp` user.
+
+```mermaid
+flowchart LR
+  df[Dockerfile]
+  df --> builder[npm-builder]
+  builder --> npmRuntime[target npm]
+  df --> pyRuntime[target python]
+  npmRuntime --> defaultImg[default image]
+```
 
 **Build:**
 
@@ -583,15 +945,15 @@ docker build --target npm -t mcp-secure-remote:npm .
 docker build --target python -t mcp-secure-remote:python .
 ```
 
-**Run the proxy** (no mTLS — plain HTTPS server):
+**Run the proxy** (plain HTTPS, no mTLS):
 
 ```bash
 docker run -i mcp-secure-remote https://mcp.example.com/mcp
 ```
 
-The `-i` flag is required because the proxy communicates over **stdin/stdout**.
+`-i` is required: the proxy speaks **stdin/stdout**.
 
-**Run the proxy with mTLS** using Docker secrets (recommended for production):
+**mTLS with Docker secrets** (preferred in production):
 
 ```bash
 docker run -i \
@@ -604,7 +966,7 @@ docker run -i \
   mcp-secure-remote https://mcp.example.com/mcp
 ```
 
-**Run the proxy with mTLS** by bind-mounting a local cert directory:
+**mTLS with a bind-mounted cert directory:**
 
 ```bash
 docker run -i \
@@ -615,11 +977,10 @@ docker run -i \
   mcp-secure-remote https://mcp.example.com/mcp
 ```
 
-All TLS configuration is supplied via `MCP_REMOTE_TLS_*` environment variables
-(see [Environment variables](#environment-variables)). No certs are baked into
-the image.
+No certs are baked into the image. Configure TLS only via
+`MCP_REMOTE_TLS_*` or flags after the image name.
 
-**Run the Node client** (verify handshake / enumerate server capabilities):
+**Node client:**
 
 ```bash
 docker run --rm \
@@ -631,7 +992,7 @@ docker run --rm \
   https://mcp.example.com/mcp
 ```
 
-**Run the Python client:**
+**Python client:**
 
 ```bash
 docker run --rm \
@@ -643,7 +1004,7 @@ docker run --rm \
   https://mcp.example.com/mcp
 ```
 
-**Pass extra CLI flags** by appending them after the image name:
+**Extra flags** go after the image name:
 
 ```bash
 docker run -i mcp-secure-remote \
@@ -653,25 +1014,46 @@ docker run -i mcp-secure-remote \
   --debug
 ```
 
-`docker compose up` builds the Node image. The Python service is opt-in:
+### Compose
+
+`docker compose up` builds the Node service. Python is a profile:
 
 ```bash
+docker compose build
 docker compose --profile python build
 ```
+
+| Service | Profile | Image | Target |
+| --- | --- | --- | --- |
+| `mcp-secure-remote` | default | `mcp-secure-remote:local` | `npm` |
+| `mcp-secure-remote-python` | `python` | `mcp-secure-remote:local-python` | `python` |
+
+Both mount `${CERTS_DIR:-./certs/dev}` at `/certs:ro` and default the
+`MCP_REMOTE_TLS_*` env vars. Override `CERTS_DIR` and the remote URL
+`command` for a real host.
 
 ---
 
 ## Development
 
-This repository is a single tree with two implementations:
+```text
+.
+├── package.json              # npm metadata + bins
+├── pyproject.toml            # PyPI metadata + scripts
+├── src/
+│   ├── proxy.ts / client.ts  # Node entrypoints
+│   ├── lib/                  # Node args, mtls, transport, sanitize
+│   └── mcp_secure_remote/    # Python package
+├── test/unit/                # Vitest
+├── tests/                    # pytest
+├── scripts/                  # local CA + mock mTLS server
+├── docs/images/              # README diagrams
+├── Dockerfile                # multi-target npm | python
+└── .github/workflows/        # ci, publish-npm, publish-py
+```
 
-| Runtime | Sources | Tests | Package metadata |
-| --- | --- | --- | --- |
-| Node | `src/*.ts`, `src/lib/` | `test/unit/` | `package.json` |
-| Python | `src/mcp_secure_remote/` | `tests/` | `pyproject.toml` |
-
-Node artifacts land in `dist/`. Python artifacts land in `dist-py/` so a
-Python build cannot be wiped by `npm run build` (tsup cleans `dist/`).
+Node artifacts go to `dist/`. Python artifacts go to `dist-py/` so
+`npm run build` (tsup `clean: true`) cannot wipe wheels.
 
 ### Node
 
@@ -680,17 +1062,20 @@ npm install
 npm run typecheck
 npm run test
 npm run test:coverage
+npm run test:watch
+npm run test:unit
 npm run build
 npm pack --dry-run
 ```
 
-`dist/proxy.js` and `dist/client.js` are the two bin entrypoints. `npm pack`
-and `npm publish` rebuild `dist/` first via the package lifecycle scripts.
-
-- `npm run test` — run Node tests once.
-- `npm run test:watch` — run Node tests in watch mode.
-- `npm run test:coverage` — run Node tests and generate coverage output.
-- `npm run test:unit` — run tests under `test/unit`.
+| Script | What it does |
+| --- | --- |
+| `npm run build` | tsup → `dist/proxy.js`, `dist/client.js` (shebang) |
+| `npm run build:watch` | rebuild on change |
+| `npm run typecheck` | `tsc --noEmit` (excludes `src/mcp_secure_remote`) |
+| `npm test` | Vitest once |
+| `npm run start:proxy` / `start:client` | run built bins |
+| `prepack` / `prepublishOnly` | rebuild `dist/` before pack/publish |
 
 ### Python
 
@@ -702,7 +1087,7 @@ uv run --extra dev pytest tests/
 uv build --out-dir dist-py
 ```
 
-Equivalent without uv:
+Without uv:
 
 ```bash
 python -m pip install -e ".[dev]"
@@ -718,8 +1103,52 @@ npm run test:py
 npm run build:py
 ```
 
-The npm tarball ships only `dist/`, README, and LICENSE. The PyPI wheel
-ships only `mcp_secure_remote`.
+### Packaging fences
+
+| Artifact | Contains | Must not contain |
+| --- | --- | --- |
+| npm tarball (`files` whitelist) | `dist/`, README, LICENSE, `package.json` | `*.py`, `pyproject.toml`, `src/mcp_secure_remote/` |
+| PyPI wheel | `mcp_secure_remote` | `*.ts`, `src/lib/`, `package.json` |
+| PyPI sdist | Python package + tests + metadata | TypeScript, `__pycache__` |
+
+CI re-checks those fences on every PR.
+
+---
+
+## Publishing
+
+Both registries publish from **this same tree** when a GitHub Release is
+**published** (or via `workflow_dispatch`).
+
+| Workflow | Trigger | What it does |
+| --- | --- | --- |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | pull_request; push to `release/npm`, `main`, `develop` | Node typecheck/test/build + pack fence; Python 3.10–3.14 pytest; wheel fence on 3.12 |
+| [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml) | release published | Node 22, `npm ci`, typecheck, test, build, `npm publish --provenance` |
+| [`.github/workflows/publish-py.yml`](.github/workflows/publish-py.yml) | release published | pytest matrix, `python -m build --outdir dist-py`, PyPI trusted publishing (OIDC) |
+
+Keep `package.json` `version` and `pyproject.toml` `version` in sync
+before tagging.
+
+---
+
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| [`src/proxy.ts`](src/proxy.ts) / [`src/client.ts`](src/client.ts) | Node bins |
+| [`src/lib/`](src/lib/) | Node args, logging, mTLS dispatcher, transport, sanitize |
+| [`src/mcp_secure_remote/`](src/mcp_secure_remote/) | Python package (same responsibilities) |
+| [`test/unit/`](test/unit/) | Vitest |
+| [`tests/`](tests/) | pytest |
+| [`scripts/generate_dev_mtls_certs.sh`](scripts/generate_dev_mtls_certs.sh) | Dev CA + server + client + P12 |
+| [`scripts/mock_mtls_mcp_server.py`](scripts/mock_mtls_mcp_server.py) | Local HTTPS MCP that requires a client cert |
+| [`docs/images/`](docs/images/) | Architecture diagrams used above |
+| [`Dockerfile`](Dockerfile) | `npm-builder` → `python` → `npm` (default) |
+| [`docker-compose.yml`](docker-compose.yml) | Node service + optional `python` profile |
+| [`MANIFEST.in`](MANIFEST.in) | PyPI sdist inclusions / exclusions |
+| [`tsconfig.json`](tsconfig.json) | Compiles `src/**/*.ts` only |
+
+---
 
 ## License
 
