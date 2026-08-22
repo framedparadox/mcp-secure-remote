@@ -188,3 +188,17 @@ class TestBuildSslContextWithMockedContext:
         mock_factory.return_value = ctx
         build_ssl_context(MtlsOptions())
         mock_factory.assert_called_once_with(ssl.Purpose.SERVER_AUTH)
+
+    def test_servername_override_sets_sni_on_wrap_bio(self):
+        ctx = build_ssl_context(MtlsOptions(servername="sni.internal"))
+        incoming = ssl.MemoryBIO()
+        outgoing = ssl.MemoryBIO()
+        ssl_object = ctx.wrap_bio(incoming, outgoing, server_hostname="192.0.2.10")
+        assert ssl_object.server_hostname == "sni.internal"
+
+    def test_without_servername_wrap_bio_keeps_url_host(self):
+        ctx = build_ssl_context(MtlsOptions())
+        incoming = ssl.MemoryBIO()
+        outgoing = ssl.MemoryBIO()
+        ssl_object = ctx.wrap_bio(incoming, outgoing, server_hostname="192.0.2.10")
+        assert ssl_object.server_hostname == "192.0.2.10"

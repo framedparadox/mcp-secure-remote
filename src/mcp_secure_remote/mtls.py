@@ -71,7 +71,32 @@ def build_ssl_context(opts: MtlsOptions) -> ssl.SSLContext:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
 
+    if opts.servername:
+        _apply_servername_override(ctx, opts.servername)
+
     return ctx
+
+
+def _apply_servername_override(ctx: ssl.SSLContext, servername: str) -> None:
+    """Force SNI and cert hostname matching to *servername*.
+
+    ``ssl.SSLContext`` has no servername field. httpx/httpcore pass the URL
+    host into ``wrap_socket`` / ``wrap_bio``. Node's ``tls.servername`` is
+    used for both SNI and verification, so we rewrite those hooks to match.
+    """
+    orig_wrap_socket = ctx.wrap_socket
+    orig_wrap_bio = ctx.wrap_bio
+
+    def wrap_socket(sock, *args, **kwargs):  # type: ignore[no-untyped-def]
+        kwargs.pop("server_hostname", None)
+        return orig_wrap_socket(sock, *args, server_hostname=servername, **kwargs)
+
+    def wrap_bio(*args, **kwargs):  # type: ignore[no-untyped-def]
+        kwargs.pop("server_hostname", None)
+        return orig_wrap_bio(*args, server_hostname=servername, **kwargs)
+
+    ctx.wrap_socket = wrap_socket  # type: ignore[method-assign]
+    ctx.wrap_bio = wrap_bio  # type: ignore[method-assign]
 
 
 def _build_from_pfx(opts: MtlsOptions) -> ssl.SSLContext:

@@ -3,14 +3,33 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import inspect
-from typing import AsyncGenerator, Callable
+from typing import Any, AsyncGenerator, Callable
 from urllib.parse import urlparse
-
-import httpx
 
 from .args import TransportStrategy
 from .log import debug_log, log
 from .mtls import MtlsOptions, build_ssl_context, has_mtls_config
+
+
+def _detect_sdk_httpx() -> Any:
+    """Return the httpx module the installed MCP SDK uses (httpx2 or httpx)."""
+    try:
+        from mcp.client import streamable_http as streamable_http_module  # type: ignore[import]
+        if getattr(streamable_http_module, "httpx2", None) is not None:
+            import httpx2  # type: ignore[import]
+
+            return httpx2
+        bundled = getattr(streamable_http_module, "httpx", None)
+        if bundled is not None:
+            return bundled
+    except Exception:
+        pass
+    import httpx
+
+    return httpx
+
+
+sdk_httpx = _detect_sdk_httpx()
 
 
 def _get_origin(url: str) -> str:
@@ -77,8 +96,8 @@ async def connect_to_remote_server(
 def _build_httpx_client_factory(
     ssl_context,
     expected_origin: str,
-) -> Callable[[dict[str, str] | None, httpx.Timeout | None, httpx.Auth | None], httpx.AsyncClient]:
-    async def _check_origin(request: httpx.Request) -> None:
+) -> Callable[..., Any]:
+    async def _check_origin(request: Any) -> None:
         """Block any request whose origin differs from the pinned expected origin."""
         req_origin = _get_origin(str(request.url))
         if req_origin != expected_origin:
@@ -92,10 +111,12 @@ def _build_httpx_client_factory(
 
     def factory(
         headers: dict[str, str] | None = None,
-        timeout: httpx.Timeout | None = None,
-        auth: httpx.Auth | None = None,
-    ) -> httpx.AsyncClient:
-        kwargs: dict = {
+        timeout: Any | None = None,
+        auth: Any | None = None,
+    ) -> Any:
+        # Must return the AsyncClient class the installed mcp SDK expects
+        # (httpx2.AsyncClient on mcp 2.x, httpx.AsyncClient on 1.x).
+        kwargs: dict[str, Any] = {
             "follow_redirects": False,
             "verify": ssl_context or True,
             "event_hooks": {"request": [_check_origin]},
@@ -106,7 +127,7 @@ def _build_httpx_client_factory(
             kwargs["timeout"] = timeout
         if auth is not None:
             kwargs["auth"] = auth
-        return httpx.AsyncClient(**kwargs)
+        return sdk_httpx.AsyncClient(**kwargs)
 
     return factory
 
@@ -125,25 +146,24 @@ async def _try_streamable_http(
         None,
     ) or getattr(streamable_http_module, "streamablehttp_client")
 
-    signature = inspect.signature(streamable_http_client)
-    if "httpx_client_factory" in signature.parameters:
-        async with streamable_http_client(
-            url,
-            headers=headers,
-            httpx_client_factory=client_factory,
-        ) as streams:
+    params = inspect.signature(streamable_http_client).parameters
+    if "httpx_client_factory" in params:
+        kwargs: dict[str, Any] = {"httpx_client_factory": client_factory}
+        if "headers" in params:
+            kwargs["headers"] = headers
+        async with streamable_http_client(url, **kwargs) as streams:
             yield streams[:2]
-    elif "http_client" in signature.parameters:
-        # mcp ≥ 1.27: accepts a pre-built httpx.AsyncClient via http_client
+    elif "http_client" in params:
+        # mcp 2.x: headers belong on the httpx2 client, not the transport.
         async with client_factory(headers=headers, timeout=None, auth=None) as http_client:
             async with streamable_http_client(url, http_client=http_client) as streams:
                 yield streams[:2]
-    elif "client" in signature.parameters:
+    elif "client" in params:
         async with client_factory(headers=headers, timeout=None, auth=None) as client:
             async with streamable_http_client(url, client=client) as streams:
                 yield streams
     else:
-        detected = list(signature.parameters.keys())
+        detected = list(params.keys())
         raise RuntimeError(
             f"mcp streamable_http_client has an unrecognised signature {detected}; "
             "cannot inject a secure httpx client. "

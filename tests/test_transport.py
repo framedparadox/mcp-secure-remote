@@ -1,15 +1,19 @@
 """Unit tests for mcp_secure_remote.transport."""
-import pytest
-import httpx
-from unittest.mock import AsyncMock, MagicMock, patch, AsyncMock
+import inspect
 from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from mcp_secure_remote.transport import (
-    _get_origin,
-    _build_httpx_client_factory,
-    connect_to_remote_server,
-)
+import httpx
+import pytest
+
 from mcp_secure_remote.mtls import MtlsOptions
+from mcp_secure_remote.transport import (
+    _build_httpx_client_factory,
+    _get_origin,
+    _try_streamable_http,
+    connect_to_remote_server,
+    sdk_httpx,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +59,18 @@ class TestBuildHttpxClientFactory:
     def test_creates_async_client_instance(self):
         factory = _build_httpx_client_factory(None, "https://example.com")
         client = factory()
-        assert isinstance(client, httpx.AsyncClient)
+        assert isinstance(client, sdk_httpx.AsyncClient)
+
+    def test_factory_matches_mcp_sdk_client_class(self):
+        factory = _build_httpx_client_factory(None, "https://example.com")
+        client = factory()
+        try:
+            from mcp.shared._httpx_utils import create_mcp_http_client
+
+            expected = type(create_mcp_http_client())
+        except Exception:
+            expected = httpx.AsyncClient
+        assert isinstance(client, expected)
 
     def test_follow_redirects_is_false(self):
         factory = _build_httpx_client_factory(None, "https://example.com")
@@ -72,7 +87,7 @@ class TestBuildHttpxClientFactory:
         # verify=True when no ssl_context passed → default CA bundle
         factory = _build_httpx_client_factory(None, "https://example.com")
         client = factory()
-        assert isinstance(client, httpx.AsyncClient)  # created successfully
+        assert isinstance(client, sdk_httpx.AsyncClient)
 
     def test_custom_ssl_context_accepted(self):
         mock_ssl = MagicMock()
@@ -83,12 +98,13 @@ class TestBuildHttpxClientFactory:
     def test_factory_accepts_headers(self):
         factory = _build_httpx_client_factory(None, "https://example.com")
         client = factory(headers={"X-Custom": "value"})
-        assert isinstance(client, httpx.AsyncClient)
+        assert isinstance(client, sdk_httpx.AsyncClient)
+        assert client.headers["X-Custom"] == "value"
 
     def test_factory_accepts_timeout(self):
         factory = _build_httpx_client_factory(None, "https://example.com")
-        client = factory(timeout=httpx.Timeout(30.0))
-        assert isinstance(client, httpx.AsyncClient)
+        client = factory(timeout=sdk_httpx.Timeout(30.0))
+        assert isinstance(client, sdk_httpx.AsyncClient)
 
     def test_two_calls_return_independent_clients(self):
         factory = _build_httpx_client_factory(None, "https://example.com")
@@ -338,3 +354,37 @@ class TestConnectToRemoteServer:
             ):
                 pass
             mock_build.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_streamable_http_puts_headers_on_sdk_client(self):
+        """mcp 2.x streamable_http_client takes http_client, not headers=."""
+        from mcp.client import streamable_http as streamable_http_module
+
+        fn = getattr(streamable_http_module, "streamable_http_client", None) or getattr(
+            streamable_http_module, "streamablehttp_client"
+        )
+        params = inspect.signature(fn).parameters
+        if "http_client" not in params or "headers" in params:
+            pytest.skip("installed mcp still accepts transport-level headers")
+
+        captured: dict = {}
+
+        @asynccontextmanager
+        async def fake_streamable(url, *, http_client=None, terminate_on_close=True):
+            captured["url"] = url
+            captured["http_client"] = http_client
+            yield (AsyncMock(), AsyncMock())
+
+        factory = _build_httpx_client_factory(None, "https://example.com")
+        with patch.object(streamable_http_module, fn.__name__, fake_streamable):
+            async with _try_streamable_http(
+                "https://example.com/mcp",
+                {"X-Test": "1"},
+                factory,
+            ):
+                pass
+
+        assert captured["url"] == "https://example.com/mcp"
+        client = captured["http_client"]
+        assert isinstance(client, sdk_httpx.AsyncClient)
+        assert client.headers["X-Test"] == "1"
