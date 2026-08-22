@@ -1,0 +1,19 @@
+# Python sdist only — keep TypeScript, Node tests, and build outputs out of PyPI.
+graft src/mcp_secure_remote
+graft tests
+include LICENSE
+include README.md
+include pyproject.toml
+include MANIFEST.in
+global-exclude *.ts
+global-exclude *.tsx
+global-exclude *.js
+global-exclude *.js.map
+global-exclude *.d.ts
+prune src/lib
+prune test
+prune dist
+prune dist-py
+prune node_modules
+prune .github
+prune scripts

@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-secure-remote"
+version = "0.0.2"
+description = "Remote proxy for Model Context Protocol servers with mTLS (mutual TLS) client certificate authentication support."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "framedparadox" }]
+keywords = [
+  "mcp",
+  "model-context-protocol",
+  "mtls",
+  "mutual-tls",
+  "proxy",
+  "remote",
+  "stdio",
+]
+requires-python = ">=3.10"
+dependencies = [
+  "mcp>=1.0.0",
+  "httpx>=0.25.0",
+  "anyio>=4.0.0",
+  "cryptography>=41.0.0",
+  "exceptiongroup>=1.0.0; python_version < '3.11'",
+]
+
+[project.urls]
+Homepage = "https://github.com/framedparadox/mcp-secure-remote#readme"
+Repository = "https://github.com/framedparadox/mcp-secure-remote.git"
+Issues = "https://github.com/framedparadox/mcp-secure-remote/issues"
+
+[project.scripts]
+mcp-secure-remote = "mcp_secure_remote.proxy:main"
+mcp-secure-remote-client = "mcp_secure_remote.client:main"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+]
+
+[tool.setuptools]
+include-package-data = false
+license-files = ["LICENSE"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["mcp_secure_remote*"]
+namespaces = false
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

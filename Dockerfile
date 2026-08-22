@@ -1,5 +1,5 @@
-# ─── Stage 1: build ──────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+# ─── Node build ──────────────────────────────────────────────────────────────
+FROM node:22-alpine AS npm-builder
 
 WORKDIR /app
 
@@ -7,19 +7,38 @@ COPY package*.json ./
 RUN npm ci
 
 COPY tsconfig.json tsup.config.ts ./
-COPY src/ ./src/
+COPY src/proxy.ts src/client.ts ./src/
+COPY src/lib/ ./src/lib/
 RUN npm run build
 
-# ─── Stage 2: runtime ────────────────────────────────────────────────────────
-FROM node:22-alpine AS runtime
+# ─── Python runtime (docker build --target python) ───────────────────────────
+FROM python:3.12-slim AS python
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-# Install production dependencies only
+COPY pyproject.toml README.md LICENSE MANIFEST.in ./
+COPY src/mcp_secure_remote/ ./src/mcp_secure_remote/
+
+RUN pip install --no-cache-dir . \
+ && useradd --no-create-home --shell /bin/false mcp
+
+USER mcp
+
+# TLS/mTLS is configured entirely via flags or MCP_REMOTE_TLS_* env vars.
+ENTRYPOINT ["mcp-secure-remote"]
+
+# ─── Node runtime (default: docker build --target npm) ───────────────────────
+FROM node:22-alpine AS npm
+
+WORKDIR /app
+
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-COPY --from=builder /app/dist ./dist
+COPY --from=npm-builder /app/dist ./dist
 
 # TLS/mTLS is configured entirely via environment variables at runtime:
 #   MCP_REMOTE_TLS_CERT       – path to PEM client certificate
@@ -41,3 +60,6 @@ COPY --from=builder /app/dist ./dist
 
 # Default: run the proxy. Override entrypoint to run the client instead.
 ENTRYPOINT ["node", "dist/proxy.js"]
+
+# Last stage is the default image: Node, matching previous release/npm builds.
+FROM npm
