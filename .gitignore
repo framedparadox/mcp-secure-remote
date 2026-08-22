@@ -1,3 +1,42 @@
-README.md
-node_modules/*
-dist/*
+# Node
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist-py/
+.venv/
+venv/
+.uv/
+uv.lock
+
+# Local / generated
+certs/*
+local-testing/configs/*
+local-testing/dist/*
+local-testing/node_modules/*
+
+# Certs / secrets (never commit)
+*.pem
+*.crt
+*.key
+*.p12
+*.pfx
+*.p8
+*.der
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp

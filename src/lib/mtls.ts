@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Agent as UndiciAgent } from 'undici'
 import type { SecureContextOptions } from 'node:tls'
+import { buildTlsPinChecker } from './tls-pin.js'
 
 /**
  * User-supplied mTLS configuration gathered from CLI flags or env vars.
@@ -27,6 +28,8 @@ export interface MtlsOptions {
   servername?: string
   /** Minimum TLS version, e.g. "TLSv1.2" or "TLSv1.3". */
   minVersion?: SecureContextOptions['minVersion']
+  /** SHA-256 SPKI pins for the remote server leaf certificate (repeatable). */
+  pinSha256?: string[]
 }
 
 /** Returns true when any mTLS-related option was provided. */
@@ -39,6 +42,7 @@ export function hasMtlsConfig(opts: MtlsOptions): boolean {
       opts.passphrase ||
       opts.servername ||
       opts.minVersion ||
+      opts.pinSha256?.length ||
       opts.rejectUnauthorized === false,
   )
 }
@@ -62,6 +66,7 @@ export function buildSecureContextOptions(opts: MtlsOptions): SecureContextOptio
 } {
   const tls: SecureContextOptions & { rejectUnauthorized: boolean; servername?: string } = {
     rejectUnauthorized: opts.rejectUnauthorized !== false,
+    minVersion: opts.minVersion ?? 'TLSv1.2',
   }
 
   if (opts.pfxPath) {
@@ -104,7 +109,17 @@ export function buildSecureContextOptions(opts: MtlsOptions): SecureContextOptio
  */
 export function buildMtlsDispatcher(opts: MtlsOptions): UndiciAgent {
   const tls = buildSecureContextOptions(opts)
+  const connect: SecureContextOptions & {
+    rejectUnauthorized: boolean
+    servername?: string
+    checkServerIdentity?: ReturnType<typeof buildTlsPinChecker>
+  } = { ...tls }
+
+  if (opts.pinSha256?.length) {
+    connect.checkServerIdentity = buildTlsPinChecker(opts.pinSha256, opts.servername)
+  }
+
   return new UndiciAgent({
-    connect: tls,
+    connect,
   })
 }
