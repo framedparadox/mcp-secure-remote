@@ -10,6 +10,10 @@ global-exclude *.tsx
 global-exclude *.js
 global-exclude *.js.map
 global-exclude *.d.ts
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude __pycache__
+recursive-exclude * __pycache__
 prune src/lib
 prune test
 prune dist

@@ -13,6 +13,15 @@ from mcp_secure_remote.sanitize import (
 )
 
 
+def _parse_jsonrpc_message(types_mod, payload: dict):
+    """Build a JSON-RPC message for mcp 1.x (RootModel) and 2.x (Union)."""
+    message_type = types_mod.JSONRPCMessage
+    if hasattr(message_type, "model_validate"):
+        return message_type.model_validate(payload)
+    from pydantic import TypeAdapter
+    return TypeAdapter(message_type).validate_python(payload)
+
+
 class TestSanitizeTerminalText:
     def test_plain_string_unchanged(self):
         assert sanitize_terminal_text("hello world") == "hello world"
@@ -232,7 +241,7 @@ class TestSummarizeMessage:
     def test_unwraps_session_message_wrapper(self):
         from mcp.shared.message import SessionMessage
         import mcp.types as t
-        inner = t.JSONRPCMessage.model_validate({"jsonrpc": "2.0", "id": 7, "method": "tools/list", "params": {}})
+        inner = _parse_jsonrpc_message(t, {"jsonrpc": "2.0", "id": 7, "method": "tools/list", "params": {}})
         wrapped = SessionMessage(message=inner)
         result = summarize_message(wrapped)
         assert result["kind"] == "request"
@@ -241,7 +250,7 @@ class TestSummarizeMessage:
 
     def test_unwraps_pydantic_jsonrpc_message(self):
         import mcp.types as t
-        m = t.JSONRPCMessage.model_validate({"jsonrpc": "2.0", "id": 3, "method": "ping"})
+        m = _parse_jsonrpc_message(t, {"jsonrpc": "2.0", "id": 3, "method": "ping"})
         result = summarize_message(m)
         assert result["kind"] == "request"
         assert result["method"] == "ping"

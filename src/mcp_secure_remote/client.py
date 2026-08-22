@@ -19,10 +19,9 @@ from .transport import connect_to_remote_server
 async def _run() -> None:
     try:
         parsed = parse_args()
-    except (ValueError, SystemExit) as exc:
-        if isinstance(exc, ValueError):
-            log("Argument error:", str(exc))
-            print_usage()
+    except ValueError as exc:
+        log("Argument error:", str(exc))
+        print_usage()
         sys.exit(2)
 
     set_debug(parsed.debug)
