@@ -420,7 +420,14 @@ flag. Node and Python accept the same arguments.
 | `--transport <strategy>` | enum | `http-first` | `http-first`, `sse-first`, `http-only`, `sse-only`. See [Transport negotiation](#transport-negotiation). |
 | `--allow-http` | boolean | `false` | Permit `http://` URLs. mTLS is meaningless over plain HTTP; the proxy warns if TLS flags are also set. |
 | `--debug` | boolean | `false` | Verbose logging to stderr: redacted args, transport choice, per-message metadata (not payloads). |
+| `--allow-private-urls` | boolean | `false` | Allow localhost and RFC1918/link-local targets. Required for the local mTLS lab. |
+| `--max-message-bytes <n>` | number | `10485760` | Drop JSON-RPC messages larger than *n* bytes (env `MCP_REMOTE_MAX_MESSAGE_BYTES`). |
+| `--auth-bearer <token>` | string | — | Set `Authorization: Bearer <token>`. |
+| `--auth-basic <user:pass>` | string | — | Set `Authorization: Basic` (base64). |
+| `--api-key <key>` | string | — | Set an API key header (default name `X-Api-Key`). |
+| `--api-key-header <name>` | string | `X-Api-Key` | Override the API key header name. |
 | `-h`, `--help` | boolean | — | Print usage to stderr and exit `0`. |
+| `-V`, `--version` | boolean | — | Print `mcp-secure-remote <version>` to stdout and exit `0`. |
 
 ### mTLS / TLS
 
@@ -433,6 +440,7 @@ flag. Node and Python accept the same arguments.
 | `--tls-passphrase <value>` | string | — | Passphrase for the key or PFX. Prefer `MCP_REMOTE_TLS_PASSPHRASE`. |
 | `--tls-servername <name>` | string | URL hostname | SNI **and** certificate hostname. Use for IP URLs, split DNS, or SAN mismatch. |
 | `--tls-min-version <ver>` | enum | TLS 1.2 floor | `TLSv1.2` or `TLSv1.3`. The proxy never goes below TLS 1.2 even if you omit this. |
+| `--tls-pin-sha256 <pin>` | string, repeatable | — | SHA-256 SPKI pin for the server leaf cert (base64, hex, or `sha256/…`). Incompatible with `--tls-insecure-skip-verify`. |
 | `--tls-insecure-skip-verify`, `--tls-no-verify` | boolean | `false` | Disable server cert validation. **Dev only.** Prints a warning. |
 
 ### Parameter rules
@@ -449,7 +457,7 @@ flag. Node and Python accept the same arguments.
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Success, `--help`, or clean interrupt |
+| `0` | Success, `--help`, `--version`, or clean interrupt |
 | `1` | Runtime / TLS / transport failure |
 | `2` | CLI parse error (missing URL, bad flag, bad header) |
 
@@ -470,6 +478,8 @@ history, and agent config files.
 | `MCP_REMOTE_TLS_SERVERNAME` | `--tls-servername` | string |
 | `MCP_REMOTE_TLS_MIN_VERSION` | `--tls-min-version` | `TLSv1.2` or `TLSv1.3` (invalid values fail parse) |
 | `MCP_REMOTE_TLS_INSECURE` | `--tls-insecure-skip-verify` | `1` / `true` / `yes` (case-insensitive) disables verify |
+| `MCP_REMOTE_TLS_PIN_SHA256` | `--tls-pin-sha256` | comma-separated SPKI pins |
+| `MCP_REMOTE_MAX_MESSAGE_BYTES` | `--max-message-bytes` | integer byte limit |
 | `MCP_REMOTE_AUTH_BEARER` | `--auth-bearer` | Bearer token (sent as `Authorization: Bearer …`) |
 | `MCP_REMOTE_AUTH_BASIC` | `--auth-basic` | `username:password` (sent as HTTP Basic) |
 | `MCP_REMOTE_API_KEY` | `--api-key` | API key value |
@@ -496,9 +506,9 @@ replace — client certificate authentication.
 | **Custom headers** | `--header "Name: value"` | Any other application auth (tenant IDs, HMAC headers, etc.) |
 
 **Not built in:** OAuth authorization-code flows, automatic token refresh, JWT
-validation, request signing (AWS SigV4), or certificate/public-key pinning.
+validation, or request signing (AWS SigV4).
 Use your identity provider to mint tokens, then pass them via `--auth-bearer` or
-`--header`.
+`--header`. For server identity, use `--tls-ca` and/or `--tls-pin-sha256`.
 
 ---
 
@@ -1096,6 +1106,7 @@ npm run test:coverage
 npm run test:watch
 npm run test:unit
 npm run build
+npm run check:version
 npm pack --dry-run
 ```
 
@@ -1106,7 +1117,8 @@ npm pack --dry-run
 | `npm run typecheck` | `tsc --noEmit` (excludes `src/mcp_secure_remote`) |
 | `npm test` | Vitest once |
 | `npm run start:proxy` / `start:client` | run built bins |
-| `prepack` / `prepublishOnly` | rebuild `dist/` before pack/publish |
+| `npm run check:version` | Fail if `package.json`, lockfile, `pyproject.toml`, and runtime version strings drift |
+| `prepack` / `prepublishOnly` | rebuild `dist/` before pack/publish (`prepublishOnly` also typechecks and tests) |
 
 ### Python
 
@@ -1153,12 +1165,18 @@ Both registries publish from **this same tree** when a GitHub Release is
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | pull_request; push to `release/npm`, `main`, `develop` | Node typecheck/test/build + pack fence; Python 3.10–3.14 pytest; wheel fence on 3.12 |
-| [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml) | release published | Node 22, `npm ci`, typecheck, test, build, `npm publish --provenance` |
-| [`.github/workflows/publish-py.yml`](.github/workflows/publish-py.yml) | release published | pytest matrix, `python -m build --outdir dist-py`, PyPI trusted publishing (OIDC) |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | pull_request; push to `release/npm`, `main`, `develop` | Version sync; Node typecheck/test/build + pack fence; Python 3.10–3.14 pytest; wheel/sdist/twine fence on 3.12 |
+| [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml) | release published | Node 22, `npm ci`, version sync, typecheck, test, build, pack fence, `npm publish --provenance` |
+| [`.github/workflows/publish-py.yml`](.github/workflows/publish-py.yml) | release published | pytest matrix, `python -m build --outdir dist-py`, twine check, sdist/wheel fence, PyPI trusted publishing (OIDC) |
 
 Keep `package.json` `version` and `pyproject.toml` `version` in sync
-before tagging.
+before tagging. `npm run check:version` (and CI) enforces that, plus the
+runtime strings in `src/lib/version.ts` and `src/mcp_secure_remote/__init__.py`.
+
+npm **0.0.1** / **0.0.2** and PyPI **0.0.1** / **0.0.2** are already on the
+registries. The next release is **0.0.3** (this tree). Publishing happens
+when a GitHub Release is published; workflows do not push to the registries
+from this PR.
 
 ---
 
@@ -1172,6 +1190,7 @@ before tagging.
 | [`test/unit/`](test/unit/) | Vitest |
 | [`tests/`](tests/) | pytest |
 | [`scripts/generate_dev_mtls_certs.sh`](scripts/generate_dev_mtls_certs.sh) | Dev CA + server + client + P12 |
+| [`scripts/check-version-sync.mjs`](scripts/check-version-sync.mjs) | Fail if npm / PyPI / runtime versions drift |
 | [`scripts/mock_mtls_mcp_server.py`](scripts/mock_mtls_mcp_server.py) | Local HTTPS MCP that requires a client cert |
 | [`Dockerfile`](Dockerfile) | `npm-builder` → `python` → `npm` (default) |
 | [`docker-compose.yml`](docker-compose.yml) | Node service + optional `python` profile |

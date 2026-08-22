@@ -427,3 +427,31 @@ class TestParseArgsEnvVars:
         with patch.dict(os.environ, {"MCP_REMOTE_TLS_CERT": ""}):
             result = parse_args(["https://example.com"])
             assert result.mtls.cert_path is None
+
+
+class TestVersionFlag:
+    def test_version_exits_0(self, capsys):
+        from mcp_secure_remote import __version__
+
+        with pytest.raises(SystemExit) as exc:
+            parse_args(["--version"])
+        assert exc.value.code == 0
+        assert capsys.readouterr().out == f"mcp-secure-remote {__version__}\n"
+
+    def test_version_short_flag(self, capsys):
+        from mcp_secure_remote import __version__
+
+        with pytest.raises(SystemExit) as exc:
+            parse_args(["-V"])
+        assert exc.value.code == 0
+        assert capsys.readouterr().out == f"mcp-secure-remote {__version__}\n"
+
+    def test_package_version_matches_pyproject(self):
+        from pathlib import Path
+
+        from mcp_secure_remote import __version__
+
+        text = Path("pyproject.toml").read_text(encoding="utf-8")
+        assert f'version = "{__version__}"' in text
+
+

@@ -49,6 +49,24 @@ jobs:
       - name: List dist-py contents
         run: ls -la dist-py/
 
+      - name: Check metadata and confirm sdist is Python-only
+        run: |
+          python -m pip install --upgrade twine
+          python -m twine check --strict dist-py/*
+          sdist=$(ls dist-py/*.tar.gz)
+          echo "sdist $sdist"
+          tar -tzf "$sdist"
+          if tar -tzf "$sdist" | grep -E '\.ts$|(^|/)src/lib/|(^|/)package\.json$|(^|/)tsup\.config\.ts$'; then
+            echo "TypeScript or npm files leaked into the sdist" >&2
+            exit 1
+          fi
+          wheel=$(ls dist-py/*.whl)
+          if unzip -l "$wheel" | grep -E '\.ts$|src/lib/|package\.json'; then
+            echo "TypeScript or npm files leaked into the wheel" >&2
+            unzip -l "$wheel"
+            exit 1
+          fi
+
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:

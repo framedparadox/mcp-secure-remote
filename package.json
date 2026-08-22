@@ -1,6 +1,6 @@
 {
   "name": "mcp-secure-remote",
-  "version": "0.0.5",
+  "version": "0.0.3",
   "description": "Remote proxy for Model Context Protocol servers with mTLS (mutual TLS) client certificate authentication support.",
   "keywords": [
     "mcp",
@@ -22,6 +22,8 @@
     "url": "https://github.com/framedparadox/mcp-secure-remote/issues"
   },
   "type": "module",
+  "main": "./dist/proxy.js",
+  "types": "./dist/proxy.d.ts",
   "bin": {
     "mcp-secure-remote": "dist/proxy.js",
     "mcp-secure-remote-client": "dist/client.js"
@@ -31,6 +33,9 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "build:watch": "tsup --watch",
@@ -46,7 +51,8 @@
     "start:proxy": "node dist/proxy.js",
     "start:client": "node dist/client.js",
     "prepack": "npm run build",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "check:version": "node scripts/check-version-sync.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

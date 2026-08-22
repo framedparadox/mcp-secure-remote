@@ -10,6 +10,7 @@ from .http_headers import validate_http_header as _validate_http_header
 from .message_size import DEFAULT_MAX_MESSAGE_BYTES, parse_max_message_bytes
 from .mtls import MtlsOptions
 from .url_security import UrlSecurityOptions, validate_remote_url
+from . import __version__
 
 TransportStrategy = Literal["http-first", "sse-first", "http-only", "sse-only"]
 VALID_TRANSPORTS: tuple[str, ...] = ("http-first", "sse-first", "http-only", "sse-only")
@@ -159,6 +160,11 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
             print_usage()
             sys.exit(0)
 
+        elif arg in ("-V", "--version"):
+            sys.stdout.write(f"mcp-secure-remote {__version__}\n")
+            sys.stdout.flush()
+            sys.exit(0)
+
         elif arg.startswith("--"):
             raise ValueError(f"Unknown flag: {arg}")
 
@@ -266,6 +272,9 @@ def print_usage() -> None:
         "  --tls-min-version <ver>     TLSv1.2 or TLSv1.3.",
         "  --tls-pin-sha256 <pin>      SHA-256 SPKI pin for server cert (repeatable; base64, hex, or sha256/…).",
         "  --tls-insecure-skip-verify  Disable server certificate validation (NOT for production).",
+        "",
+        "  -h, --help                  Print usage and exit.",
+        "  -V, --version               Print version and exit.",
         "",
         "Environment variables (fallbacks for flags):",
         "  MCP_REMOTE_TLS_CERT, MCP_REMOTE_TLS_KEY, MCP_REMOTE_TLS_CA,",
