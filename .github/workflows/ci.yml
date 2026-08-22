@@ -35,11 +35,14 @@ jobs:
 
       - name: Confirm npm pack is JS-only
         run: |
-          tarball=$(npm pack --dry-run --json | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const j=JSON.parse(s); console.log(j[0].filename)})")
-          npm pack --silent
-          if tar -tzf "$tarball" | grep -E '\.py$|pyproject\.toml|mcp_secure_remote'; then
+          # Skip prepack (already built above). prepack/tsup logs on stdout
+          # break `npm pack --json` and `$(npm pack --silent)`.
+          npm pack --ignore-scripts
+          tarball=$(ls mcp-secure-remote-*.tgz)
+          echo "Packed $tarball"
+          tar -tzf "$tarball"
+          if tar -tzf "$tarball" | grep -E '\.py$|(^|/)pyproject\.toml$|(^|/)src/mcp_secure_remote/'; then
             echo "Python files leaked into the npm tarball" >&2
-            tar -tzf "$tarball"
             exit 1
           fi
           rm -f "$tarball"
